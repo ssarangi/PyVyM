@@ -22,23 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-import dis
-import sys
-
-from src.vm import BytecodeVM
-from src.log import draw_header
-
-def main():
-    filename = sys.argv[1]
-    fptr = open(filename, "r")
-    source = fptr.read()
-    draw_header("Source")
-    print(source)
-    code = compile(source, filename, "exec")
-    draw_header("Disassembly")
-    dis.dis(code)
-    vm = BytecodeVM(code)
-    vm.execute()
-
-if __name__ == "__main__":
-    main()
+def draw_header(txt):
+    print("-" * 100)
+    print(" " * 40 + txt + " " * 40)
+    print("-" * 100)

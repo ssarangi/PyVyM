@@ -21,37 +21,70 @@ COMPARE_OPERATORS = [
     lambda x, y: issubclass(x, Exception) and issubclass(x, y),
     ]
 
-class Function:
+class Base:
     def __init__(self):
         pass
 
-class Method:
-    def __init__(self):
-        pass
+    def add_attr(self, attr, value):
+        setattr(self, attr, value)
 
-class Cell:
+    def get_attr(self, attr):
+        if attr in self:
+            return getattr(self, attr)
+
+        return None
+
+    def __str__(self):
+        s = ""
+        for attr in self.__dict__:
+            s += attr + ": " + str(self.__dict__[attr])
+
+        return s
+
+class Module(Base):
+    def __init__(self):
+        Base.__init__(self)
+
+    def add_attr(self, attr, value):
+        Base.add_attr(self, attr, value)
+
+    def get_attr(self, attr):
+        Base.get_attr(attr)
+
+    def __str__(self):
+        return Base.__str__(self)
+
+class Function(Base):
+    def __init__(self):
+        Base.__init__(self)
+
+    def add_attr(self, attr, value):
+        Base.add_attr(self, attr, value)
+
+    def get_attr(self, attr):
+        return Base.get_attr(attr)
+
+    def __str__(self):
+        return Base.__str__(self)
+
+class Klass(Base):
+    def __init__(self):
+        Base.__init__(self)
+
+class Closure:
     pass
 
-class Frame:
-    def __init__(self, code, globals, locals):
-        self.__code = code
-        self.__globals = globals
-        self.__locals = locals
-        self.__stack = []
-
-        self.__lineno = code.co_firstlineno
-        self.__lasti = 0
-
 class BytecodeVM:
-    def __init__(self, fn, *args):
-        self.__code_object = fn.__code__
+    def __init__(self, code, *args):
+        self.__code_object = code
         self.__constants = self.__code_object.co_consts
         self.__names = self.__code_object.co_names
         self.__program = self.__code_object.co_code
         self.__nlocals = self.__code_object.co_nlocals
 
-        self.__globals_dict = fn.__globals__
-        self.__builtins_dict = self.__globals_dict['__builtins__']
+        # self.__globals_dict = fn.__globals__
+        # self.__globals_dict = None
+        # self.__builtins_dict = self.__globals_dict['__builtins__']
 
         self.__ip = 0
         self.__locals = []
@@ -62,6 +95,9 @@ class BytecodeVM:
         self.__locals += [uninitialized] * (self.__nlocals - len(args))
         self.__stack = []
         self.__value = None
+
+        self.__module = Module()
+        self.__current_scope = self.__module
 
     @property
     def value(self):
@@ -104,6 +140,7 @@ class BytecodeVM:
             self.__ip += 1
             opmethod = "execute_%s" % dis.opname[op]
 
+            oparg = None
             if op >= dis.HAVE_ARGUMENT:
                 low = self.__program[self.__ip]
                 high = self.__program[self.__ip + 1]
@@ -111,7 +148,10 @@ class BytecodeVM:
                 self.__ip += 2
 
             if (hasattr(self, opmethod)):
-                terminate = getattr(self, opmethod)(oparg)
+                if oparg is not None:
+                    terminate = getattr(self, opmethod)(oparg)
+                else:
+                    terminate = getattr(self, opmethod)
                 if terminate:
                     break
             else:
@@ -497,7 +537,8 @@ class BytecodeVM:
         """
         Pushes builtins.__build_class__() onto the stack. It is later called by CALL_FUNCTION to construct a class.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        # raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        print("BUILD_CLASS")
 
 
     def execute_SETUP_WITH(self, delta):
@@ -534,8 +575,10 @@ class BytecodeVM:
         Implements name = TOS. namei is the index of name in the attribute co_names of the code object. The compiler tries
         to use STORE_FAST or STORE_GLOBAL if possible.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-
+        # Add the name to the current scope
+        value = self.__stack.pop()
+        name = self.__names[namei]
+        self.__current_scope.add_attr(name, value)
 
     def execute_DELETE_NAME(self, namei):
         """
