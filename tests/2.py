@@ -27,6 +27,9 @@ class Point:
         self.x = x
         self.y = y
 
+    def print(self):
+        return str(self.x) + str(self.y)
+
 def ChangePoint():
     a = 1
     obj1 = Point(1, 2)

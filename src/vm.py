@@ -4,6 +4,7 @@ import operator
 # Very good explanation comes from this link. https://ep2013.europython.eu/conference/talks/all-singing-all-dancing-python-bytecode
 
 import sys
+from enum import Enum
 
 uninitialized = None
 
@@ -74,7 +75,14 @@ class Klass(Base):
 class Closure:
     pass
 
+class VMState(Enum):
+    BUILD_CLASS = 1
+    BUILD_FUNC = 2
+    EXEC = 3
+
 class BytecodeVM:
+    __states__ = ["BUILD_CLASS", "BUILD_FUNCTION", "EXEC"]
+
     def __init__(self, code, *args):
         self.__code_object = code
         self.__constants = self.__code_object.co_consts
@@ -98,6 +106,7 @@ class BytecodeVM:
 
         self.__module = Module()
         self.__current_scope = self.__module
+        self.__current_state_stack = [VMState.EXEC]
 
     @property
     def value(self):
@@ -151,7 +160,7 @@ class BytecodeVM:
                 if oparg is not None:
                     terminate = getattr(self, opmethod)(oparg)
                 else:
-                    terminate = getattr(self, opmethod)
+                    terminate = getattr(self, opmethod)()
                 if terminate:
                     break
             else:
@@ -538,7 +547,7 @@ class BytecodeVM:
         Pushes builtins.__build_class__() onto the stack. It is later called by CALL_FUNCTION to construct a class.
         """
         # raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-        print("BUILD_CLASS")
+        self.__current_state_stack.append(VMState.BUILD_CLASS)
 
 
     def execute_SETUP_WITH(self, delta):
@@ -688,7 +697,7 @@ class BytecodeVM:
         w = self.__stack.pop()
         v = self.__stack.pop()
         if len(COMPARE_OPERATORS) < compare_op:
-            raise NotImplementedError("Compare Op %s not implemented" % opname)
+            raise NotImplementedError("Compare Op %s not implemented" % compare_op)
 
         value = COMPARE_OPERATORS[compare_op](v, w)
         self.__stack.append(value)
