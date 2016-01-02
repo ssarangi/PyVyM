@@ -22,22 +22,26 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-import dis
-import py_compile
-import sys
-import marshal, time, struct, types
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
-from src.vm import BytecodeVM
+def ChangePoint():
+    a = 1
+    obj1 = Point(1, 2)
+    obj2 = Point(3, 4)
 
-def main():
-    filename = sys.argv[1]
-    fptr = open(filename, "r")
-    source = fptr.read()
-    print(source)
-    code = compile(source, filename, "exec")
-    dis.dis(code)
-    # vm = BytecodeVM(ChangePoint)
-    # vm.execute()
+    obj1.a = 5
+    obj1.b = 10
 
-if __name__ == "__main__":
-    main()
+    obj2.b = 5
+    obj2.a = 10
+
+    if obj1.a > 5:
+        obj2.b = 1
+    else:
+        obj2.a = 2
+
+
+ChangePoint()

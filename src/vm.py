@@ -3,6 +3,8 @@ import operator
 
 # Very good explanation comes from this link. https://ep2013.europython.eu/conference/talks/all-singing-all-dancing-python-bytecode
 
+import sys
+
 uninitialized = None
 
 COMPARE_OPERATORS = [
@@ -18,6 +20,27 @@ COMPARE_OPERATORS = [
     lambda x, y: x is not y,
     lambda x, y: issubclass(x, Exception) and issubclass(x, y),
     ]
+
+class Function:
+    def __init__(self):
+        pass
+
+class Method:
+    def __init__(self):
+        pass
+
+class Cell:
+    pass
+
+class Frame:
+    def __init__(self, code, globals, locals):
+        self.__code = code
+        self.__globals = globals
+        self.__locals = locals
+        self.__stack = []
+
+        self.__lineno = code.co_firstlineno
+        self.__lasti = 0
 
 class BytecodeVM:
     def __init__(self, fn, *args):
