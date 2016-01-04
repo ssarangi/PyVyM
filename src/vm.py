@@ -79,7 +79,7 @@ class Module(Base):
         self.__classes[class_obj.name] = class_obj
 
     def add_function(self, fn):
-        self.__func[fn.name] = fn
+        self.__funcs[fn.name] = fn
 
     def add_attr(self, attr, value):
         Base.add_attr(self, attr, value)
