@@ -5,6 +5,7 @@ import operator
 
 import sys
 from enum import Enum
+from src.log import draw_header
 
 uninitialized = None
 
@@ -24,7 +25,8 @@ COMPARE_OPERATORS = [
 
 class Base:
     def __init__(self):
-        pass
+        self.__program = None
+        self.__ip = 0
 
     def add_attr(self, attr, value):
         setattr(self, attr, value)
@@ -35,16 +37,49 @@ class Base:
 
         return None
 
+    def set_code(self, code):
+        self.__program = code
+
+    def get_opcode(self):
+        op = self.__program[self.__ip]
+        self.__ip += 1
+        opmethod = "execute_%s" % dis.opname[op]
+
+        oparg = None
+        if op >= dis.HAVE_ARGUMENT:
+            low = self.__program[self.__ip]
+            high = self.__program[self.__ip + 1]
+            oparg = (high << 8) | low
+            self.__ip += 2
+
+        return opmethod, oparg
+
     def __str__(self):
         s = ""
         for attr in self.__dict__:
-            s += attr + ": " + str(self.__dict__[attr])
+            s += attr + ": " + str(self.__dict__[attr]) + "\n"
 
         return s
 
 class Module(Base):
     def __init__(self):
         Base.__init__(self)
+        self.__classes = {}
+        self.__funcs = {}
+
+    @property
+    def classes(self):
+        return self.__classes
+
+    @property
+    def functions(self):
+        return self.__funcs
+
+    def add_class(self, class_obj):
+        self.__classes[class_obj.name] = class_obj
+
+    def add_function(self, fn):
+        self.__func[fn.name] = fn
 
     def add_attr(self, attr, value):
         Base.add_attr(self, attr, value)
@@ -55,9 +90,11 @@ class Module(Base):
     def __str__(self):
         return Base.__str__(self)
 
+
 class Function(Base):
-    def __init__(self):
+    def __init__(self, name):
         Base.__init__(self)
+        self.__name = name
 
     def add_attr(self, attr, value):
         Base.add_attr(self, attr, value)
@@ -65,24 +102,39 @@ class Function(Base):
     def get_attr(self, attr):
         return Base.get_attr(attr)
 
+    def set_code(self, code):
+        Base.set_code(code)
+
+    def execute(self):
+        if Base.__program is not None:
+            pass
+        else:
+            raise Exception("Cannot run function before code is set")
+
     def __str__(self):
         return Base.__str__(self)
 
-class Klass(Base):
+
+class Class(Base):
     def __init__(self):
         Base.__init__(self)
 
+
 class Closure:
     pass
+
 
 class VMState(Enum):
     BUILD_CLASS = 1
     BUILD_FUNC = 2
     EXEC = 3
 
-class BytecodeVM:
-    __states__ = ["BUILD_CLASS", "BUILD_FUNCTION", "EXEC"]
 
+class Builtins:
+    def __init__(self):
+        self.__build_class__ = Function("__build_class__")
+
+class BytecodeVM:
     def __init__(self, code, *args):
         self.__code_object = code
         self.__constants = self.__code_object.co_consts
@@ -107,6 +159,8 @@ class BytecodeVM:
         self.__module = Module()
         self.__current_scope = self.__module
         self.__current_state_stack = [VMState.EXEC]
+        self.__functions = {}
+        self.__builtins = Builtins()
 
     @property
     def value(self):
@@ -119,6 +173,12 @@ class BytecodeVM:
             m = getattr(self.__code_object, method)
             print("Calling method: %s" % method)
             print(m)
+
+    def __get_stack_top(self):
+        return self.__stack.pop()
+
+    def __add_to_stack(self, item):
+        self.__stack.append(item)
 
     def _generate_opcode(self):
         bytecode = self.__code_object.co_code
@@ -143,28 +203,43 @@ class BytecodeVM:
 
             yield(op, oparg)
 
+    def get_opcode(self):
+        op = self.__program[self.__ip]
+        self.__ip += 1
+        opmethod = "execute_%s" % dis.opname[op]
+
+        oparg = None
+        if op >= dis.HAVE_ARGUMENT:
+            low = self.__program[self.__ip]
+            high = self.__program[self.__ip + 1]
+            oparg = (high << 8) | low
+            self.__ip += 2
+
+        return opmethod, oparg
+
+    def execute_opcode(self, opmethod, oparg):
+        if (hasattr(self, opmethod)):
+            if oparg is not None:
+                terminate = getattr(self, opmethod)(oparg)
+            else:
+                terminate = getattr(self, opmethod)()
+        else:
+            raise NotImplementedError("Method %s not found." % (opmethod))
+
+        return terminate
+
+    def execute_next_instruction(self):
+        opmethod, oparg = self.get_opcode()
+        terminate = self.execute_opcode(opmethod, oparg)
+        return terminate
+
     def execute(self):
         while True:
-            op = self.__program[self.__ip]
-            self.__ip += 1
-            opmethod = "execute_%s" % dis.opname[op]
+            opmethod, oparg = self.get_opcode()
 
-            oparg = None
-            if op >= dis.HAVE_ARGUMENT:
-                low = self.__program[self.__ip]
-                high = self.__program[self.__ip + 1]
-                oparg = (high << 8) | low
-                self.__ip += 2
-
-            if (hasattr(self, opmethod)):
-                if oparg is not None:
-                    terminate = getattr(self, opmethod)(oparg)
-                else:
-                    terminate = getattr(self, opmethod)()
-                if terminate:
-                    break
-            else:
-                raise NotImplementedError("Method %s not found." % (opmethod))
+            terminate = self.execute_opcode(opmethod, oparg)
+            if terminate:
+                break
 
     def execute_NOP(self, oparg):
         """
@@ -271,6 +346,7 @@ class BytecodeVM:
         Implements TOS = TOS1 % TOS.
         """
         raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+
 
 
     def execute_BINARY_ADD(self, oparg):
@@ -546,8 +622,7 @@ class BytecodeVM:
         """
         Pushes builtins.__build_class__() onto the stack. It is later called by CALL_FUNCTION to construct a class.
         """
-        # raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-        self.__current_state_stack.append(VMState.BUILD_CLASS)
+        self.__add_to_stack(self.__builtins.__build_class__)
 
 
     def execute_SETUP_WITH(self, delta):
@@ -645,7 +720,8 @@ class BytecodeVM:
         """
         Pushes co_consts[consti] onto the stack.
         """
-        self.__stack.append(self.__constants[consti])
+        const = self.__constants[consti]
+        self.__stack.append(const)
 
 
     def execute_LOAD_NAME(self, namei):
@@ -897,7 +973,14 @@ class BytecodeVM:
         annotations (only if there are ony annotation objects) the code associated with the function (at TOS1) the qualified name of the
         function (at TOS)
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        positional_args = argc & 0xFF
+        name = self.__stack.pop()
+        code = self.__stack.pop()
+        draw_header("FUNCTION CODE")
+        dis.dis(code)
+        fn = Function(name)
+        fn.add_attr("code", code)
+        self.__functions[name] = fn
 
     def execute_MAKE_CLOSURE(self, argc):
         """

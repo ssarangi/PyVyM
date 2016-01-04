@@ -24,8 +24,8 @@ THE SOFTWARE.
 
 class Point:
     def __init__(self, x, y):
-        self.x = x
-        self.y = y
+        self.x = x * 8
+        self.y = y * 5
 
     def print(self):
         return str(self.x) + str(self.y)
@@ -45,6 +45,8 @@ def ChangePoint():
         obj2.b = 1
     else:
         obj2.a = 2
+
+    return obj1.a * obj1.b + obj2.a * obj2.b
 
 
 ChangePoint()
