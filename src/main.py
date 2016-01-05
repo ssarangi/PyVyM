@@ -24,11 +24,16 @@ THE SOFTWARE.
 
 import dis
 import sys
+import inspect
 
 from src.vm import BytecodeVM
 from src.log import draw_header
 
+def foo(a, b=5, c=10):
+    return a + b + c
+
 def main():
+    print(inspect.getcallargs(foo, 1))
     filename = sys.argv[1]
     fptr = open(filename, "r")
     source = fptr.read()

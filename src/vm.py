@@ -119,10 +119,15 @@ class Module(Base):
 
 
 class Function(Base):
-    def __init__(self, name, code=None):
+    def __init__(self, name, defaults, code=None):
         Base.__init__(self)
         self.__name = name
+        self.__defaults = defaults
         Base.set_code(self, code)
+
+    @property
+    def defaults(self):
+        return self.__defaults
 
     @property
     def name(self):
@@ -178,7 +183,7 @@ class Builtins:
         print(str)
 
 class ExecutionFrame:
-    def __init__(self, callable, globals, args, ip=0):
+    def __init__(self, callable, globals, args, kwargs, ip=0):
         assert(callable is not None, "Code object has to be provided when creating a new code context")
         self.__ip = ip
         self.__callable = callable
@@ -195,9 +200,24 @@ class ExecutionFrame:
 
         self.__locals = {}
 
+        # Set the default arguments. This could be optimized so we set it once in the function
+        # itself. But then we don't pull from Function locals right now
+        if hasattr(callable, "defaults"):
+            pos_count = callable.code.co_argcount
+            pos_default_count = len(callable.defaults)
+            non_default_count = pos_count - pos_default_count
+
+            for i in range(0, len(callable.defaults)):
+                var_name = self.__code.co_varnames[non_default_count + i]
+                self.__locals[var_name] = callable.defaults[i]
+
         for i in range(0, len(args)):
             var_name = self.__code.co_varnames[i]
             self.__locals[var_name] = args[i]
+
+        # Set the keyword arguments
+        for k, v in kwargs.items():
+            self.__locals[k] = v
 
     @property
     def program(self):
@@ -263,6 +283,14 @@ class ExecutionFrame:
     def get_stack_top(self):
         return self.__stack.pop()
 
+    def get_stack_top_n(self, n):
+        if n:
+            ret = self.__stack[-n:]
+            self.__stack[-n:] = []
+            return ret
+        else:
+            return []
+
     def pop_stack(self):
         self.__stack.pop()
 
@@ -280,7 +308,7 @@ class BytecodeVM:
         self.__module.code = code
         self.__current_scope = self.__module
 
-        self.__module_frame = ExecutionFrame(self.__module, globals = {}, args = [])
+        self.__module_frame = ExecutionFrame(self.__module, globals = {}, args = [], kwargs={})
         self.__exec_frame = self.__module_frame
         self.__exec_frame_stack = []
         self.__builtins = sys.modules['builtins'].__dict__
@@ -1079,8 +1107,18 @@ class BytecodeVM:
         Below the parameters, the function object to call is on the stack. Pops all function arguments, and the function itself off
         the stack, and pushes the return value.
         """
-        assert argc < 255, "can't handle keyword arguments"
-        args = [self.__exec_frame.get_stack_top() for i in range(argc)]
+        num_positional_args = argc & 0xF
+        num_keyword_args = (argc >> 8) & 0xF
+
+        kwargs = {}
+        for i in range(0, num_keyword_args):
+            val = self.__exec_frame.get_stack_top()
+            arg_name = self.__exec_frame.get_stack_top()
+            kwargs[arg_name] = val
+
+        args = [self.__exec_frame.get_stack_top() for i in range(num_positional_args)]
+        args.reverse()
+
         callable = self.__exec_frame.get_stack_top()
         self.__exec_frame.add_to_stack(callable)
 
@@ -1089,7 +1127,7 @@ class BytecodeVM:
             callable(*args)
             return
 
-        exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args)
+        exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args, kwargs)
         self.__exec_frame_stack.append(self.__exec_frame)
         self.__exec_frame = exec_ctx
 
@@ -1103,11 +1141,15 @@ class BytecodeVM:
         annotations (only if there are ony annotation objects) the code associated with the function (at TOS1) the qualified name of the
         function (at TOS)
         """
+        num_default_args = argc & 0xFF
+        num_kw_args = (argc >> 8) & 0xFF
+
         name = self.__exec_frame.get_stack_top()
         code = self.__exec_frame.get_stack_top()
+        defaults = self.__exec_frame.get_stack_top_n(num_default_args)
         draw_header("FUNCTION CODE: %s" % name)
         dis.dis(code)
-        fn = Function(name)
+        fn = Function(name, defaults)
         fn.code = code
         self.__exec_frame.add_global(name, fn)
         self.__exec_frame.vm_state = VMState.BUILD_FUNC
