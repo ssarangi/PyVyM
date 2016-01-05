@@ -25,7 +25,7 @@ COMPARE_OPERATORS = [
 
 class Base:
     def __init__(self):
-        self.__program = None
+        self.__code = None
         self.__ip = 0
 
     def add_attr(self, attr, value):
@@ -37,18 +37,21 @@ class Base:
 
         return None
 
-    def set_code(self, code):
-        self.__program = code
+    def get_code(self):
+        return self.__code
+
+    def set_code(self, c):
+        self.__code = c
 
     def get_opcode(self):
-        op = self.__program[self.__ip]
+        op = self.__code[self.__ip]
         self.__ip += 1
         opmethod = "execute_%s" % dis.opname[op]
 
         oparg = None
         if op >= dis.HAVE_ARGUMENT:
-            low = self.__program[self.__ip]
-            high = self.__program[self.__ip + 1]
+            low = self.__code[self.__ip]
+            high = self.__code[self.__ip + 1]
             oparg = (high << 8) | low
             self.__ip += 2
 
@@ -62,10 +65,11 @@ class Base:
         return s
 
 class Module(Base):
-    def __init__(self):
+    def __init__(self, name):
         Base.__init__(self)
         self.__classes = {}
         self.__funcs = {}
+        self.__name = name
 
     @property
     def classes(self):
@@ -74,6 +78,14 @@ class Module(Base):
     @property
     def functions(self):
         return self.__funcs
+
+    @property
+    def code(self):
+        return Base.code
+
+    @code.setter
+    def code(self, c):
+        Base.code = c
 
     def add_class(self, class_obj):
         self.__classes[class_obj.name] = class_obj
@@ -88,13 +100,21 @@ class Module(Base):
         Base.get_attr(attr)
 
     def __str__(self):
-        return Base.__str__(self)
+        return "Module: %s" % self.__name
 
 
 class Function(Base):
     def __init__(self, name):
         Base.__init__(self)
         self.__name = name
+
+    @property
+    def code(self):
+        return Base.get_code(self)
+
+    @code.setter
+    def code(self, c):
+        Base.set_code(self, c)
 
     def add_attr(self, attr, value):
         Base.add_attr(self, attr, value)
@@ -105,14 +125,8 @@ class Function(Base):
     def set_code(self, code):
         Base.set_code(code)
 
-    def execute(self):
-        if Base.__program is not None:
-            pass
-        else:
-            raise Exception("Cannot run function before code is set")
-
     def __str__(self):
-        return Base.__str__(self)
+        return "Function: %s" % self.__name
 
 
 class Class(Base):
@@ -134,37 +148,111 @@ class Builtins:
     def __init__(self):
         self.__build_class__ = Function("__build_class__")
 
+class ExecutionFrame:
+    def __init__(self, callable, globals, locals, ip=0):
+        assert(callable is not None, "Code object has to be provided when creating a new code context")
+        self.__ip = ip
+        self.__callable = callable
+        self.__code = callable.code
+        self.__stack = []
+        self.__globals_dict = globals
+        self.__vm_current_state = VMState.EXEC
+
+        self.__constants = self.__code.co_consts
+        self.__names = self.__code.co_names
+        self.__program = self.__code.co_code
+        self.__nlocals = self.__code.co_nlocals
+        self.__local_vars = self.__code.co_varnames
+
+        assert(len(locals) == self.__nlocals)
+        self.__locals = {}
+
+        for i in range(0, self.__nlocals):
+            var_name = self.__code.co_varnames[i]
+            self.__locals[var_name] = locals[i]
+
+    @property
+    def program(self):
+        return self.__program
+
+    @property
+    def names(self):
+        return self.__names
+
+    @property
+    def constants(self):
+        return self.__constants
+
+    @property
+    def globals(self):
+        return self.__globals_dict
+
+    def get_local_var_name(self, varnum):
+        return self.__local_vars[varnum]
+
+    def get_local_var_value(self, varname):
+        return self.__locals[varname]
+
+    def increment_ip(self, val=1):
+        self.__ip += val
+
+    def add_global(self, name, val):
+        self.__globals_dict[name] = val
+
+    def get_global(self, name):
+        if name in self.__globals_dict:
+            return self.__globals_dict[name]
+
+        return None
+
+    @property
+    def ip(self):
+        return self.__ip
+
+    @ip.setter
+    def ip(self, v):
+        self.__ip = v
+
+    @property
+    def code(self):
+        return self.__code
+
+    @code.setter
+    def code(self, c):
+        self.__code = c
+
+    @property
+    def vm_state(self):
+        return self.__vm_current_state
+
+    @vm_state.setter
+    def vm_state(self, state):
+        self.__vm_current_state = state
+
+    def get_stack_top(self):
+        return self.__stack.pop()
+
+    def pop_stack(self):
+        self.__stack.pop()
+
+    def add_to_stack(self, v):
+        self.__stack.append(v)
+
+    def __str__(self):
+        return str(self.__callable)
+
 class BytecodeVM:
     def __init__(self, code, *args):
         self.__code_object = code
-        self.__constants = self.__code_object.co_consts
-        self.__names = self.__code_object.co_names
-        self.__program = self.__code_object.co_code
-        self.__nlocals = self.__code_object.co_nlocals
 
-        # self.__globals_dict = fn.__globals__
-        # self.__globals_dict = None
-        # self.__builtins_dict = self.__globals_dict['__builtins__']
-
-        self.__ip = 0
-        self.__locals = []
-        if isinstance(args, list):
-            self.__locals += args
-        else:
-            self.__locals += list(args)
-        self.__locals += [uninitialized] * (self.__nlocals - len(args))
-        self.__stack = []
-        self.__value = None
-
-        self.__module = Module()
+        self.__module = Module("main_module")
+        self.__module.code = code
         self.__current_scope = self.__module
-        self.__current_state_stack = [VMState.EXEC]
-        self.__functions = {}
-        self.__builtins = Builtins()
 
-    @property
-    def value(self):
-        return self.__value
+        self.__module_frame = ExecutionFrame(self.__module, globals = {}, locals = [])
+        self.__exec_frame = self.__module_frame
+        self.__exec_frame_stack = []
+        self.__builtins = Builtins()
 
     def print_members(self):
         co_methods = [method for method in dir(self.__code_object) if method.startswith("co_")]
@@ -175,45 +263,22 @@ class BytecodeVM:
             print(m)
 
     def __get_stack_top(self):
-        return self.__stack.pop()
+        return self.__exec_frame.get_stack_top()
 
     def __add_to_stack(self, item):
-        self.__stack.append(item)
+        self.__exec_frame.add_to_stack(item)
 
-    def _generate_opcode(self):
-        bytecode = self.__code_object.co_code
-        extended_arg = 0
-        i = 0
-        n = len(bytecode)
-        while i < n:
-            op = bytecode[i]
-            i += 1
-            if op >= dis.HAVE_ARGUMENT:
-                # when opcodes have arguments, the next 2 bytes represent the args.
-                # the first byte is the LSB and the 2nd byte is the MSB. So the MSB
-                # has to be shifted by 8 bits
-                oparg = bytecode[i] | (bytecode[i+1] << 8) + extended_arg
-                extended_arg = 0
-                i += 2
-                if op == dis.EXTENDED_ARG:
-                    extended_arg = oparg * 65536
-                    continue
-            else:
-                oparg = None
-
-            yield(op, oparg)
-
-    def get_opcode(self):
-        op = self.__program[self.__ip]
-        self.__ip += 1
+    def __get_opcode(self):
+        op = self.__exec_frame.program[self.__exec_frame.ip]
+        self.__exec_frame.ip += 1
         opmethod = "execute_%s" % dis.opname[op]
 
         oparg = None
         if op >= dis.HAVE_ARGUMENT:
-            low = self.__program[self.__ip]
-            high = self.__program[self.__ip + 1]
+            low = self.__exec_frame.program[self.__exec_frame.ip]
+            high = self.__exec_frame.program[self.__exec_frame.ip + 1]
             oparg = (high << 8) | low
-            self.__ip += 2
+            self.__exec_frame.ip += 2
 
         return opmethod, oparg
 
@@ -229,17 +294,20 @@ class BytecodeVM:
         return terminate
 
     def execute_next_instruction(self):
-        opmethod, oparg = self.get_opcode()
+        opmethod, oparg = self.__get_opcode()
         terminate = self.execute_opcode(opmethod, oparg)
         return terminate
 
     def execute(self):
         while True:
-            opmethod, oparg = self.get_opcode()
+            opmethod, oparg = self.__get_opcode()
 
             terminate = self.execute_opcode(opmethod, oparg)
             if terminate:
-                break
+                print("Program Terminated:")
+                return_val = self.__exec_frame.get_stack_top()
+                print("Program Return Value: %s" % return_val)
+                sys.exit(return_val)
 
     def execute_NOP(self, oparg):
         """
@@ -247,11 +315,11 @@ class BytecodeVM:
         """
         raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
 
-    def execute_POP_TOP(self, oparg):
+    def execute_POP_TOP(self):
         """
         Removes the top-of-stack (TOS) item.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.__exec_frame.pop_stack()
 
     def execute_ROT_TWO(self, oparg):
         """
@@ -320,11 +388,13 @@ class BytecodeVM:
         """
         raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
 
-    def execute_BINARY_MULTIPLY(self, oparg):
+    def execute_BINARY_MULTIPLY(self):
         """
         Implements TOS = TOS1 * TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        w = self.__exec_frame.get_stack_top()
+        v = self.__exec_frame.get_stack_top()
+        self.__exec_frame.add_to_stack(v * w)
 
 
     def execute_BINARY_FLOOR_DIVIDE(self, oparg):
@@ -349,22 +419,23 @@ class BytecodeVM:
 
 
 
-    def execute_BINARY_ADD(self, oparg):
+    def execute_BINARY_ADD(self):
         """
         Implements TOS = TOS1 + TOS.
         """
-        w = self.__stack.pop()
-        v = self.__stack.pop()
-        self.__stack.append(v + w)
+        w = self.__exec_frame.get_stack_top()
+        v = self.__exec_frame.get_stack_top()
+        self.__exec_frame.add_to_stack(v + w)
 
 
-    def execute_BINARY_SUBTRACT(self, oparg):
+    def execute_BINARY_SUBTRACT(self):
         """
         Implements TOS = TOS1 - TOS.
         """
-        w = self.__stack.pop()
-        v = self.__stack.pop()
-        self.__stack.append(v - w)
+        w = self.__exec_frame.get_stack_top()
+        v = self.__exec_frame.get_stack_top()
+        self.__exec_frame.add_to_stack(v - w)
+
 
     def execute_BINARY_SUBSCR(self, oparg):
         """
@@ -560,13 +631,25 @@ class BytecodeVM:
     # For all of the SET_ADD, LIST_APPEND and MAP_ADD instructions, while the added value or key/value pair
     # is popped off, the container object remains on the stack so that it is available for further iterations of the loop.
 
-    def execute_RETURN_VALUE(self, oparg):
+    def execute_RETURN_VALUE(self):
         """
         Returns with TOS to the caller of the function.
         """
-        assert len(self.__stack) == 1
-        self.__value = self.__stack[0]
-        terminate = True
+        terminate = False
+        return_val = self.__exec_frame.get_stack_top()
+
+        prev_exec_ctx = None
+        if len(self.__exec_frame_stack) > 0:
+            prev_exec_ctx = self.__exec_frame_stack.pop()
+
+        if prev_exec_ctx is not None:
+            self.__exec_frame = prev_exec_ctx
+
+        self.__exec_frame.add_to_stack(return_val)
+
+        if prev_exec_ctx == None:
+            terminate = True
+
         return terminate
 
     def execute_YIELD_VALUE(self):
@@ -660,9 +743,10 @@ class BytecodeVM:
         to use STORE_FAST or STORE_GLOBAL if possible.
         """
         # Add the name to the current scope
-        value = self.__stack.pop()
-        name = self.__names[namei]
-        self.__current_scope.add_attr(name, value)
+        if (self.__exec_frame.vm_state == VMState.EXEC):
+            value = self.__exec_frame.get_stack_top()
+            name = self.__exec_frame.names[namei]
+            self.__current_scope.add_attr(name, value)
 
     def execute_DELETE_NAME(self, namei):
         """
@@ -720,15 +804,15 @@ class BytecodeVM:
         """
         Pushes co_consts[consti] onto the stack.
         """
-        const = self.__constants[consti]
-        self.__stack.append(const)
+        const = self.__exec_frame.constants[consti]
+        self.__exec_frame.add_to_stack(const)
 
 
     def execute_LOAD_NAME(self, namei):
         """
         Pushes the value associated with co_names[namei] onto the stack.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_LOAD_GLOBAL(namei)
 
 
     def execute_BUILD_TUPLE(self, count):
@@ -770,13 +854,13 @@ class BytecodeVM:
         """
         Performs a Boolean operation. The operation name can be found in cmp_op[opname].
         """
-        w = self.__stack.pop()
-        v = self.__stack.pop()
+        w = self.__exec_frame.get_stack_top()
+        v = self.__exec_frame.get_stack_top()
         if len(COMPARE_OPERATORS) < compare_op:
             raise NotImplementedError("Compare Op %s not implemented" % compare_op)
 
         value = COMPARE_OPERATORS[compare_op](v, w)
-        self.__stack.append(value)
+        self.__exec_frame.add_to_stack(value)
 
     def execute_IMPORT_NAME(self, namei):
         """
@@ -812,8 +896,8 @@ class BytecodeVM:
         """
         If TOS is false, sets the bytecode counter to target. TOS is popped.
         """
-        if not self.__stack.pop():
-            self.__ip = target
+        if not self.__exec_frame.get_stack_top():
+            self.__exec_frame.ip = target
 
     def execute_JUMP_IF_TRUE_OR_POP(self, target):
         """
@@ -848,11 +932,12 @@ class BytecodeVM:
         """
         Loads the global named co_names[namei] onto the stack.
         """
-        name = self.__names[namei]
-        if name in self.__globals_dict:
-            self.__stack.append(self.__globals_dict[name])
+        name = self.__exec_frame.names[namei]
+        global_v = self.__exec_frame.get_global(name)
+        if global_v is not None:
+            self.__exec_frame.add_to_stack(global_v)
         else:
-            self.__stack.append(self.__builtins_dict[name])
+            raise Exception("Global Value %s is not defined" % name)
 
     def execute_SETUP_LOOP(self, delta):
         """
@@ -886,7 +971,8 @@ class BytecodeVM:
         """
         Pushes a reference to the local co_varnames[var_num] onto the stack.
         """
-        self.__stack.append(self.__locals[var_num])
+        varname = self.__exec_frame.get_local_var_name(var_num)
+        self.__exec_frame.add_to_stack(self.__exec_frame.get_local_var_value(varname))
 
 
     def execute_STORE_FAST(self, var_num):
@@ -958,12 +1044,15 @@ class BytecodeVM:
         the stack, and pushes the return value.
         """
         assert argc < 255, "can't handle keyword arguments"
-        args = [self.__stack.pop() for i in range(argc)]
-        callable = self.__stack.pop()
-        vm = BytecodeVM(callable, *args)
-        vm.execute()
-        value = vm.value
-        self.__stack.append(value)
+        args = [self.__exec_frame.get_stack_top() for i in range(argc)]
+        callable = self.__exec_frame.get_stack_top()
+        self.__exec_frame.add_to_stack(callable)
+
+        exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args)
+        self.__exec_frame_stack.append(self.__exec_frame)
+        self.__exec_frame = exec_ctx
+
+        self.execute()
 
     def execute_MAKE_FUNCTION(self, argc):
         """
@@ -973,14 +1062,14 @@ class BytecodeVM:
         annotations (only if there are ony annotation objects) the code associated with the function (at TOS1) the qualified name of the
         function (at TOS)
         """
-        positional_args = argc & 0xFF
-        name = self.__stack.pop()
-        code = self.__stack.pop()
-        draw_header("FUNCTION CODE")
+        name = self.__exec_frame.get_stack_top()
+        code = self.__exec_frame.get_stack_top()
+        draw_header("FUNCTION CODE: %s" % name)
         dis.dis(code)
         fn = Function(name)
-        fn.add_attr("code", code)
-        self.__functions[name] = fn
+        fn.code = code
+        self.__exec_frame.add_global(name, fn)
+        self.__exec_frame.vm_state = VMState.BUILD_FUNC
 
     def execute_MAKE_CLOSURE(self, argc):
         """
