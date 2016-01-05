@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-def foo(a, b=0):
+def foo(a, b=50):
     return a * b
 
 def main():
