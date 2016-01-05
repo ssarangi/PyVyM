@@ -497,42 +497,42 @@ class BytecodeVM:
         self.execute_binary_op('-')
 
 
-    def execute_BINARY_SUBSCR(self, oparg):
+    def execute_BINARY_SUBSCR(self):
         """
         Implements TOS = TOS1[TOS].
         """
         raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
 
 
-    def execute_BINARY_LSHIFT(self, oparg):
+    def execute_BINARY_LSHIFT(self):
         """
         Implements TOS = TOS1 << TOS.
         """
         self.execute_binary_op('<<')
 
 
-    def execute_BINARY_RSHIFT(self, oparg):
+    def execute_BINARY_RSHIFT(self):
         """
         Implements TOS = TOS1 >> TOS.
         """
         self.execute_binary_op('>>')
 
 
-    def execute_BINARY_AND(self, oparg):
+    def execute_BINARY_AND(self):
         """
         Implements TOS = TOS1 & TOS.
         """
         self.execute_binary_op('&')
 
 
-    def execute_BINARY_XOR(self, oparg):
+    def execute_BINARY_XOR(self):
         """
         Implements TOS = TOS1 ^ TOS.
         """
         self.execute_binary_op('^')
 
 
-    def execute_BINARY_OR(self, oparg):
+    def execute_BINARY_OR(self):
         """
         Implements TOS = TOS1 | TOS.
         """
@@ -544,84 +544,84 @@ class BytecodeVM:
     # the result back on the stack, but the operation is done in-place when TOS1 supports it, and
     # the resulting TOS may be (but does not have to be) the original TOS1.
 
-    def execute_INPLACE_POWER(self, oparg):
+    def execute_INPLACE_POWER(self):
         """
         Implements in-place TOS = TOS1 ** TOS.
         """
         self.execute_binary_op("**")
 
 
-    def execute_INPLACE_MULTIPLY(self, oparg):
+    def execute_INPLACE_MULTIPLY(self):
         """
         Implements in-place TOS = TOS1 * TOS.
         """
         self.execute_binary_op("*")
 
 
-    def execute_INPLACE_FLOOR_DIVIDE(self, oparg):
+    def execute_INPLACE_FLOOR_DIVIDE(self):
         """
         Implements in-place TOS = TOS1 // TOS.
         """
         self.execute_binary_op("//")
 
 
-    def execute_INPLACE_TRUE_DIVIDE(self, oparg):
+    def execute_INPLACE_TRUE_DIVIDE(self):
         """
         Implements in-place TOS = TOS1 / TOS.
         """
         self.execute_binary_op("/")
 
 
-    def execute_INPLACE_MODULO(self, oparg):
+    def execute_INPLACE_MODULO(self):
         """
         Implements in-place TOS = TOS1 % TOS.
         """
         self.execute_binary_op("%")
 
 
-    def execute_INPLACE_ADD(self, oparg):
+    def execute_INPLACE_ADD(self):
         """
         Implements in-place TOS = TOS1 + TOS.
         """
         self.execute_binary_op("+")
 
 
-    def execute_INPLACE_SUBTRACT(self, oparg):
+    def execute_INPLACE_SUBTRACT(self):
         """
         Implements in-place TOS = TOS1 - TOS.
         """
         self.execute_binary_op("-")
 
 
-    def execute_INPLACE_LSHIFT(self, oparg):
+    def execute_INPLACE_LSHIFT(self):
         """
         Implements in-place TOS = TOS1 << TOS.
         """
         self.execute_binary_op("<<")
 
 
-    def execute_INPLACE_RSHIFT(self, oparg):
+    def execute_INPLACE_RSHIFT(self):
         """
         Implements in-place TOS = TOS1 >> TOS.
         """
         self.execute_binary_op(">>")
 
 
-    def execute_INPLACE_AND(self, oparg):
+    def execute_INPLACE_AND(self):
         """
         Implements in-place TOS = TOS1 & TOS.
         """
         self.execute_binary_op("&")
 
 
-    def execute_INPLACE_XOR(self, oparg):
+    def execute_INPLACE_XOR(self):
         """
         Implements in-place TOS = TOS1 ^ TOS.
         """
         self.execute_binary_op("^")
 
 
-    def execute_INPLACE_OR(self, oparg):
+    def execute_INPLACE_OR(self):
         """
         Implements in-place TOS = TOS1 | TOS.
         """
