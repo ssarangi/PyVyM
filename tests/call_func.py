@@ -23,7 +23,9 @@ THE SOFTWARE.
 """
 
 def foo(a):
-    return a + 5
+    b = a * 5
+    print(a + 5)
+    return b
 
 def main():
     return foo(7)

@@ -104,9 +104,14 @@ class Module(Base):
 
 
 class Function(Base):
-    def __init__(self, name):
+    def __init__(self, name, code=None):
         Base.__init__(self)
         self.__name = name
+        Base.set_code(self, code)
+
+    @property
+    def name(self):
+        return self.__name
 
     @property
     def code(self):
@@ -146,7 +151,16 @@ class VMState(Enum):
 
 class Builtins:
     def __init__(self):
-        self.__build_class__ = Function("__build_class__")
+        self.__funcs = {}
+        self.__funcs["build_class"] = Function("__build_class__")
+        self.__funcs["print"] = Function("print", self.__print__.__code__)
+
+    @property
+    def funcs(self):
+        return self.__funcs
+
+    def __print__(self, str):
+        print(str)
 
 class ExecutionFrame:
     def __init__(self, callable, globals, locals, ip=0):
@@ -252,7 +266,9 @@ class BytecodeVM:
         self.__module_frame = ExecutionFrame(self.__module, globals = {}, locals = [])
         self.__exec_frame = self.__module_frame
         self.__exec_frame_stack = []
-        self.__builtins = Builtins()
+        # self.__builtins = Builtins()
+        self.__builtins = sys.modules['builtins'].__dict__
+
 
     def print_members(self):
         co_methods = [method for method in dir(self.__code_object) if method.startswith("co_")]
@@ -934,10 +950,16 @@ class BytecodeVM:
         """
         name = self.__exec_frame.names[namei]
         global_v = self.__exec_frame.get_global(name)
+        if global_v is None:
+            # Check if the global is a builtin
+            if name in self.__builtins:
+                global_v = self.__builtins[name]
+            else:
+                raise Exception("Global Value %s is not defined" % name)
+
         if global_v is not None:
             self.__exec_frame.add_to_stack(global_v)
-        else:
-            raise Exception("Global Value %s is not defined" % name)
+
 
     def execute_SETUP_LOOP(self, delta):
         """
@@ -1047,6 +1069,11 @@ class BytecodeVM:
         args = [self.__exec_frame.get_stack_top() for i in range(argc)]
         callable = self.__exec_frame.get_stack_top()
         self.__exec_frame.add_to_stack(callable)
+
+        if not isinstance(callable, Function):
+            # This is a builtin function. Then directly run it
+            callable(*args)
+            return
 
         exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args)
         self.__exec_frame_stack.append(self.__exec_frame)
