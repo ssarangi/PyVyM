@@ -159,6 +159,18 @@ class Class(Base):
         Base.__init__(self)
 
 
+class Block(Base):
+    def __init__(self, code):
+        Base.__init__(self)
+        Base.set_code(self, code)
+
+    @property
+    def code(self):
+        return Base.get_code(self)
+
+    def set_code(self, code):
+        Base.set_code(code)
+
 class Closure:
     pass
 
@@ -741,7 +753,8 @@ class BytecodeVM:
         Removes one block from the block stack. Per frame, there is a stack of blocks, denoting nested loops,
         try statements, and such.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        prev_exec_frame = self.__exec_frame_stack.pop()
+        self.__exec_frame = prev_exec_frame
 
 
     def execute_POP_EXCEPT(self):
@@ -1018,7 +1031,10 @@ class BytecodeVM:
         """
         Pushes a block for a loop onto the block stack. The block spans from the current instruction with a size of delta bytes.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        block = Block(self.__exec_frame.code)
+        exec_frame = ExecutionFrame(block, self.__exec_frame.globals, [], {}, ip=self.__exec_frame.ip)
+        self.__exec_frame_stack.append(self.__exec_frame)
+        self.__exec_frame = exec_frame
 
 
     def execute_SETUP_EXCEPT(self, delta):
