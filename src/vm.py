@@ -160,9 +160,14 @@ class Class(Base):
 
 
 class Block(Base):
-    def __init__(self, code):
+    def __init__(self, code, closure_vars):
         Base.__init__(self)
         Base.set_code(self, code)
+        self.__closure_vars = closure_vars
+
+    @property
+    def closure_vars(self):
+        return self.__closure_vars
 
     @property
     def code(self):
@@ -211,6 +216,8 @@ class ExecutionFrame:
         self.__local_vars = self.__code.co_varnames
 
         self.__locals = {}
+        if isinstance(callable, Block):
+            self.__locals = callable.closure_vars
 
         # Set the default arguments. This could be optimized so we set it once in the function
         # itself. But then we don't pull from Function locals right now
@@ -230,6 +237,10 @@ class ExecutionFrame:
         # Set the keyword arguments
         for k, v in kwargs.items():
             self.__locals[k] = v
+
+    @property
+    def locals(self):
+        return self.__locals
 
     @property
     def program(self):
@@ -292,13 +303,13 @@ class ExecutionFrame:
     def vm_state(self, state):
         self.__vm_current_state = state
 
-    def get_stack_top_no_pop(self):
+    def top(self):
         return self.__stack[-1]
 
-    def get_stack_top(self):
+    def pop(self):
         return self.__stack.pop()
 
-    def get_stack_top_n(self, n):
+    def popn(self, n):
         if n:
             ret = self.__stack[-n:]
             self.__stack[-n:] = []
@@ -306,10 +317,7 @@ class ExecutionFrame:
         else:
             return []
 
-    def pop_stack(self):
-        self.__stack.pop()
-
-    def add_to_stack(self, v):
+    def append(self, v):
         self.__stack.append(v)
 
     def __str__(self):
@@ -337,12 +345,6 @@ class BytecodeVM:
             print("Calling method: %s" % method)
             print(m)
 
-    def __get_stack_top(self):
-        return self.__exec_frame.get_stack_top()
-
-    def __add_to_stack(self, item):
-        self.__exec_frame.add_to_stack(item)
-
     def __get_opcode(self):
         op = self.__exec_frame.program[self.__exec_frame.ip]
         self.__exec_frame.ip += 1
@@ -356,6 +358,9 @@ class BytecodeVM:
             self.__exec_frame.ip += 2
 
         return opmethod, oparg
+
+    def __jump(self, target):
+        self.__exec_frame.ip = target
 
     def execute_opcode(self, opmethod, oparg):
         if (hasattr(self, opmethod)):
@@ -380,7 +385,7 @@ class BytecodeVM:
             terminate = self.execute_opcode(opmethod, oparg)
             if terminate:
                 print("Program Terminated:")
-                return_val = self.__exec_frame.get_stack_top()
+                return_val = self.__exec_frame.pop()
                 print("Program Return Value: %s" % return_val)
                 sys.exit(return_val)
 
@@ -394,7 +399,7 @@ class BytecodeVM:
         """
         Removes the top-of-stack (TOS) item.
         """
-        self.__exec_frame.pop_stack()
+        self.__exec_frame.pop()
 
     def execute_ROT_TWO(self, oparg):
         """
@@ -447,11 +452,12 @@ class BytecodeVM:
         """
         raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
 
-    def execute_GET_ITER(self, oparg):
+    def execute_GET_ITER(self):
         """
         Implements TOS = iter(TOS).
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        print(self.__exec_frame.top())
+        self.__exec_frame.append(iter(self.__exec_frame.pop()))
 
     # Binary operations
     # Binary operations remove the top of the stack (TOS) and the second top-most stack item (TOS1) from the stack.
@@ -459,9 +465,9 @@ class BytecodeVM:
 
     def execute_binary_op(self, op):
         lambda_op = BINARY_OPERATORS[op]
-        w = self.__exec_frame.get_stack_top()
-        v = self.__exec_frame.get_stack_top()
-        self.__exec_frame.add_to_stack(lambda_op(v, w))
+        w = self.__exec_frame.pop()
+        v = self.__exec_frame.pop()
+        self.__exec_frame.append(lambda_op(v, w))
 
     def execute_BINARY_POWER(self, oparg):
         """
@@ -678,7 +684,6 @@ class BytecodeVM:
         """
         raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
 
-
     def execute_SET_ADD(self, i):
         """
         Calls set.add(TOS1[-i], TOS). Used to implement set comprehensions.
@@ -708,7 +713,7 @@ class BytecodeVM:
         Returns with TOS to the caller of the function.
         """
         terminate = False
-        return_val = self.__exec_frame.get_stack_top()
+        return_val = self.__exec_frame.top()
 
         prev_exec_ctx = None
         if len(self.__exec_frame_stack) > 0:
@@ -717,7 +722,7 @@ class BytecodeVM:
         if prev_exec_ctx is not None:
             self.__exec_frame = prev_exec_ctx
 
-        self.__exec_frame.add_to_stack(return_val)
+        self.__exec_frame.append(return_val)
 
         if prev_exec_ctx == None:
             terminate = True
@@ -753,9 +758,10 @@ class BytecodeVM:
         Removes one block from the block stack. Per frame, there is a stack of blocks, denoting nested loops,
         try statements, and such.
         """
+        current_ip = self.__exec_frame.ip
         prev_exec_frame = self.__exec_frame_stack.pop()
         self.__exec_frame = prev_exec_frame
-
+        self.__jump(current_ip)
 
     def execute_POP_EXCEPT(self):
         """
@@ -817,7 +823,7 @@ class BytecodeVM:
         """
         # Add the name to the current scope
         if (self.__exec_frame.vm_state == VMState.EXEC):
-            value = self.__exec_frame.get_stack_top()
+            value = self.__exec_frame.pop()
             name = self.__exec_frame.names[namei]
             self.__current_scope.add_attr(name, value)
 
@@ -878,7 +884,7 @@ class BytecodeVM:
         Pushes co_consts[consti] onto the stack.
         """
         const = self.__exec_frame.constants[consti]
-        self.__exec_frame.add_to_stack(const)
+        self.__exec_frame.append(const)
 
 
     def execute_LOAD_NAME(self, namei):
@@ -901,7 +907,7 @@ class BytecodeVM:
         """
         if count == 0:
             var = []
-            self.__exec_frame.add_to_stack(var)
+            self.__exec_frame.append(var)
 
 
     def execute_BUILD_SET(self, count):
@@ -922,21 +928,21 @@ class BytecodeVM:
         """
         Replaces TOS with getattr(TOS, co_names[namei]).
         """
-        func = getattr(self.__exec_frame.get_stack_top(), self.__exec_frame.names[namei])
-        self.__exec_frame.add_to_stack(func)
+        func = getattr(self.__exec_frame.pop(), self.__exec_frame.names[namei])
+        self.__exec_frame.append(func)
 
 
     def execute_COMPARE_OP(self, compare_op):
         """
         Performs a Boolean operation. The operation name can be found in cmp_op[opname].
         """
-        w = self.__exec_frame.get_stack_top()
-        v = self.__exec_frame.get_stack_top()
+        w = self.__exec_frame.pop()
+        v = self.__exec_frame.pop()
         if len(COMPARE_OPERATORS) < compare_op:
             raise NotImplementedError("Compare Op %s not implemented" % compare_op)
 
         value = COMPARE_OPERATORS[compare_op](v, w)
-        self.__exec_frame.add_to_stack(value)
+        self.__exec_frame.append(value)
 
     def execute_IMPORT_NAME(self, namei):
         """
@@ -965,35 +971,35 @@ class BytecodeVM:
         """
         If TOS is true, sets the bytecode counter to target. TOS is popped.
         """
-        if self.__exec_frame.get_stack_top_no_pop():
+        if self.__exec_frame.top():
             self.__exec_frame.ip = target
-            self.__exec_frame.pop_stack()
+            self.__exec_frame.pop()
 
     def execute_POP_JUMP_IF_FALSE(self, target):
         """
         If TOS is false, sets the bytecode counter to target. TOS is popped.
         """
-        if not self.__exec_frame.get_stack_top_no_pop():
+        if not self.__exec_frame.top():
             self.__exec_frame.ip = target
-            self.__exec_frame.pop_stack()
+            self.__exec_frame.pop()
 
     def execute_JUMP_IF_TRUE_OR_POP(self, target):
         """
         If TOS is true, sets the bytecode counter to target and leaves TOS on the stack. Otherwise (TOS is false), TOS is popped.
         """
-        if self.__exec_frame.get_stack_top_no_pop():
+        if self.__exec_frame.top():
             self.__exec_frame.ip = target
         else:
-            self.__exec_frame.pop_stack()
+            self.__exec_frame.pop()
 
     def execute_JUMP_IF_FALSE_OR_POP(self, target):
         """
         If TOS is false, sets the bytecode counter to target and leaves TOS on the stack. Otherwise (TOS is true), TOS is popped.
         """
-        if not self.__exec_frame.get_stack_top_no_pop():
+        if not self.__exec_frame.top():
             self.__exec_frame.ip = target
         else:
-            self.__exec_frame.pop_stack()
+            self.__exec_frame.pop()
 
 
     def execute_JUMP_ABSOLUTE(self, target):
@@ -1007,8 +1013,13 @@ class BytecodeVM:
         TOS is an iterator. Call its __next__() method. If this yields a new value, push it on the stack (leaving the iterator below it).
         If the iterator indicates it is exhausted TOS is popped, and the byte code counter is incremented by delta.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-
+        iter_obj = self.__exec_frame.top()
+        try:
+            iter_obj = next(iter_obj)
+            self.__exec_frame.append(iter_obj)
+        except StopIteration:
+            self.__exec_frame.pop()
+            self.__jump(self.__exec_frame.ip + delta)
 
     def execute_LOAD_GLOBAL(self, namei):
         """
@@ -1024,14 +1035,14 @@ class BytecodeVM:
                 raise Exception("Global Value %s is not defined" % name)
 
         if global_v is not None:
-            self.__exec_frame.add_to_stack(global_v)
+            self.__exec_frame.append(global_v)
 
 
     def execute_SETUP_LOOP(self, delta):
         """
         Pushes a block for a loop onto the block stack. The block spans from the current instruction with a size of delta bytes.
         """
-        block = Block(self.__exec_frame.code)
+        block = Block(self.__exec_frame.code, self.__exec_frame.locals)
         exec_frame = ExecutionFrame(block, self.__exec_frame.globals, [], {}, ip=self.__exec_frame.ip)
         self.__exec_frame_stack.append(self.__exec_frame)
         self.__exec_frame = exec_frame
@@ -1063,7 +1074,7 @@ class BytecodeVM:
         Pushes a reference to the local co_varnames[var_num] onto the stack.
         """
         varname = self.__exec_frame.get_local_var_name(var_num)
-        self.__exec_frame.add_to_stack(self.__exec_frame.get_local_var_value(varname))
+        self.__exec_frame.append(self.__exec_frame.get_local_var_value(varname))
 
 
     def execute_STORE_FAST(self, var_num):
@@ -1071,7 +1082,7 @@ class BytecodeVM:
         Stores TOS into the local co_varnames[var_num].
         """
         varname = self.__exec_frame.get_local_var_name(var_num)
-        value = self.__exec_frame.get_stack_top()
+        value = self.__exec_frame.pop()
         self.__exec_frame.set_local_var_value(varname, value)
 
     def execute_DELETE_FAST(self, var_num):
@@ -1140,20 +1151,21 @@ class BytecodeVM:
 
         kwargs = {}
         for i in range(0, num_keyword_args):
-            val = self.__exec_frame.get_stack_top()
-            arg_name = self.__exec_frame.get_stack_top()
+            val = self.__exec_frame.pop()
+            arg_name = self.__exec_frame.pop()
             kwargs[arg_name] = val
 
-        args = [self.__exec_frame.get_stack_top() for i in range(num_positional_args)]
+        args = [self.__exec_frame.pop() for i in range(num_positional_args)]
         args.reverse()
 
-        callable = self.__exec_frame.get_stack_top()
-        self.__exec_frame.add_to_stack(callable)
+        callable = self.__exec_frame.pop()
+        self.__exec_frame.append(callable)
 
         if not isinstance(callable, Function):
             # This is a builtin function. Then directly run it
             result = callable(*args)
-            self.__exec_frame.add_to_stack(result)
+            self.__exec_frame.pop()
+            self.__exec_frame.append(result)
             return
 
         exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args, kwargs)
@@ -1173,9 +1185,9 @@ class BytecodeVM:
         num_default_args = argc & 0xFF
         num_kw_args = (argc >> 8) & 0xFF
 
-        name = self.__exec_frame.get_stack_top()
-        code = self.__exec_frame.get_stack_top()
-        defaults = self.__exec_frame.get_stack_top_n(num_default_args)
+        name = self.__exec_frame.pop()
+        code = self.__exec_frame.pop()
+        defaults = self.__exec_frame.popn(num_default_args)
         draw_header("FUNCTION CODE: %s" % name)
         dis.dis(code)
         fn = Function(name, defaults)
