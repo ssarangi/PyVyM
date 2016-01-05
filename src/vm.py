@@ -23,6 +23,21 @@ COMPARE_OPERATORS = [
     lambda x, y: issubclass(x, Exception) and issubclass(x, y),
     ]
 
+BINARY_OPERATORS = {
+    '+':   lambda x, y: x + y,
+    '-':   lambda x, y: x - y,
+    '*':   lambda x, y: x * y,
+    '**':  lambda x, y: x ** y,
+    '/':   lambda x, y: x / y,
+    '//':  lambda x, y: x // y,
+    '<<':  lambda x, y: x << y,
+    '>>':  lambda x, y: x >> y,
+    '%':   lambda x, y: x % type(x)(y),
+    '&':   lambda x, y: x & y,
+    '|':   lambda x, y: x | y,
+    '^':   lambda x, y: x ^ y,
+}
+
 class Base:
     def __init__(self):
         self.__code = None
@@ -399,60 +414,56 @@ class BytecodeVM:
     # Binary operations remove the top of the stack (TOS) and the second top-most stack item (TOS1) from the stack.
     # They perform the operation, and put the result back on the stack.
 
+    def execute_binary_op(self, op):
+        lambda_op = BINARY_OPERATORS[op]
+        w = self.__exec_frame.get_stack_top()
+        v = self.__exec_frame.get_stack_top()
+        self.__exec_frame.add_to_stack(lambda_op(v, w))
+
     def execute_BINARY_POWER(self, oparg):
         """
         Implements TOS = TOS1 ** TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op('**')
 
     def execute_BINARY_MULTIPLY(self):
         """
         Implements TOS = TOS1 * TOS.
         """
-        w = self.__exec_frame.get_stack_top()
-        v = self.__exec_frame.get_stack_top()
-        self.__exec_frame.add_to_stack(v * w)
+        self.execute_binary_op('*')
 
 
     def execute_BINARY_FLOOR_DIVIDE(self, oparg):
         """
         Implements TOS = TOS1 // TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op('//')
 
 
     def execute_BINARY_TRUE_DIVIDE(self, oparg):
         """
         Implements TOS = TOS1 / TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op('/')
 
 
     def execute_BINARY_MODULO(self):
         """
         Implements TOS = TOS1 % TOS.
         """
-        w = self.__exec_frame.get_stack_top()
-        v = self.__exec_frame.get_stack_top()
-        self.__exec_frame.add_to_stack(v % w)
-
+        self.execute_binary_op('%')
 
     def execute_BINARY_ADD(self):
         """
         Implements TOS = TOS1 + TOS.
         """
-        w = self.__exec_frame.get_stack_top()
-        v = self.__exec_frame.get_stack_top()
-        self.__exec_frame.add_to_stack(v + w)
-
+        self.execute_binary_op('+')
 
     def execute_BINARY_SUBTRACT(self):
         """
         Implements TOS = TOS1 - TOS.
         """
-        w = self.__exec_frame.get_stack_top()
-        v = self.__exec_frame.get_stack_top()
-        self.__exec_frame.add_to_stack(v - w)
+        self.execute_binary_op('-')
 
 
     def execute_BINARY_SUBSCR(self, oparg):
@@ -466,35 +477,35 @@ class BytecodeVM:
         """
         Implements TOS = TOS1 << TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op('<<')
 
 
     def execute_BINARY_RSHIFT(self, oparg):
         """
         Implements TOS = TOS1 >> TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op('>>')
 
 
     def execute_BINARY_AND(self, oparg):
         """
         Implements TOS = TOS1 & TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op('&')
 
 
     def execute_BINARY_XOR(self, oparg):
         """
         Implements TOS = TOS1 ^ TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op('^')
 
 
     def execute_BINARY_OR(self, oparg):
         """
         Implements TOS = TOS1 | TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op('|')
 
 
     # In-place operations
