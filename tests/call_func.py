@@ -24,7 +24,7 @@ THE SOFTWARE.
 
 def foo(a):
     b = a * 5
-    print(a + 5)
+    print("Value of b: %s" % b)
     return b
 
 def main():

@@ -268,7 +268,6 @@ class BytecodeVM:
         self.__module_frame = ExecutionFrame(self.__module, globals = {}, args = [])
         self.__exec_frame = self.__module_frame
         self.__exec_frame_stack = []
-        # self.__builtins = Builtins()
         self.__builtins = sys.modules['builtins'].__dict__
 
 
@@ -429,12 +428,13 @@ class BytecodeVM:
         raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
 
 
-    def execute_BINARY_MODULO(self, oparg):
+    def execute_BINARY_MODULO(self):
         """
         Implements TOS = TOS1 % TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-
+        w = self.__exec_frame.get_stack_top()
+        v = self.__exec_frame.get_stack_top()
+        self.__exec_frame.add_to_stack(v % w)
 
 
     def execute_BINARY_ADD(self):
