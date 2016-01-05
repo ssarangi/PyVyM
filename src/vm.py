@@ -886,7 +886,9 @@ class BytecodeVM:
         """
         Works as BUILD_TUPLE, but creates a list.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        if count == 0:
+            var = []
+            self.__exec_frame.add_to_stack(var)
 
 
     def execute_BUILD_SET(self, count):
@@ -907,7 +909,8 @@ class BytecodeVM:
         """
         Replaces TOS with getattr(TOS, co_names[namei]).
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        func = getattr(self.__exec_frame.get_stack_top(), self.__exec_frame.names[namei])
+        self.__exec_frame.add_to_stack(func)
 
 
     def execute_COMPARE_OP(self, compare_op):
@@ -1133,7 +1136,8 @@ class BytecodeVM:
 
         if not isinstance(callable, Function):
             # This is a builtin function. Then directly run it
-            callable(*args)
+            result = callable(*args)
+            self.__exec_frame.add_to_stack(result)
             return
 
         exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args, kwargs)
