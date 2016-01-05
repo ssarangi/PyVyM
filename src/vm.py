@@ -405,7 +405,9 @@ class BytecodeVM:
         """
         Swaps the two top-most stack items.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        tos = self.__exec_frame.pop()
+        tos1 = self.__exec_frame.pop()
+        self.__exec_frame.append(to)
 
     def execute_ROT_THREE(self, oparg):
         """
@@ -646,18 +648,24 @@ class BytecodeVM:
         self.execute_binary_op("|")
 
 
-    def execute_STORE_SUBSCR(self, oparg):
+    def execute_STORE_SUBSCR(self):
         """
         Implements TOS1[TOS] = TOS2.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        key = self.__exec_frame.pop()
+        obj = self.__exec_frame.pop()
+        val = self.__exec_frame.pop()
+        obj[key] = val
+        self.__exec_frame.append(obj)
 
 
     def execute_DELETE_SUBSCR(self, oparg):
         """
         Implements del TOS1[TOS].
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        key = self.__exec_frame.pop()
+        obj = self.__exec_frame.pop()
+        del obj[key]
 
 
     # Miscellaneous opcodes
@@ -921,7 +929,7 @@ class BytecodeVM:
         """
         Pushes a new dictionary object onto the stack. The dictionary is pre-sized to hold count entries.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.__exec_frame.append({})
 
 
     def execute_LOAD_ATTR(self, namei):
