@@ -280,6 +280,9 @@ class ExecutionFrame:
     def vm_state(self, state):
         self.__vm_current_state = state
 
+    def get_stack_top_no_pop(self):
+        return self.__stack[-1]
+
     def get_stack_top(self):
         return self.__stack.pop()
 
@@ -939,43 +942,49 @@ class BytecodeVM:
         """
         Increments bytecode counter by delta.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.__exec_frame.ip += delta
 
 
     def execute_POP_JUMP_IF_TRUE(self, target):
         """
         If TOS is true, sets the bytecode counter to target. TOS is popped.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-
+        if self.__exec_frame.get_stack_top_no_pop():
+            self.__exec_frame.ip = target
+            self.__exec_frame.pop_stack()
 
     def execute_POP_JUMP_IF_FALSE(self, target):
         """
         If TOS is false, sets the bytecode counter to target. TOS is popped.
         """
-        if not self.__exec_frame.get_stack_top():
+        if not self.__exec_frame.get_stack_top_no_pop():
             self.__exec_frame.ip = target
+            self.__exec_frame.pop_stack()
 
     def execute_JUMP_IF_TRUE_OR_POP(self, target):
         """
         If TOS is true, sets the bytecode counter to target and leaves TOS on the stack. Otherwise (TOS is false), TOS is popped.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-
+        if self.__exec_frame.get_stack_top_no_pop():
+            self.__exec_frame.ip = target
+        else:
+            self.__exec_frame.pop_stack()
 
     def execute_JUMP_IF_FALSE_OR_POP(self, target):
         """
         If TOS is false, sets the bytecode counter to target and leaves TOS on the stack. Otherwise (TOS is true), TOS is popped.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        if not self.__exec_frame.get_stack_top_no_pop():
+            self.__exec_frame.ip = target
+        else:
+            self.__exec_frame.pop_stack()
 
 
     def execute_JUMP_ABSOLUTE(self, target):
         """
         Set bytecode counter to target.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-
+        self.__exec_frame.ip = target
 
     def execute_FOR_ITER(self, delta):
         """
