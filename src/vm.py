@@ -548,84 +548,84 @@ class BytecodeVM:
         """
         Implements in-place TOS = TOS1 ** TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("**")
 
 
     def execute_INPLACE_MULTIPLY(self, oparg):
         """
         Implements in-place TOS = TOS1 * TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("*")
 
 
     def execute_INPLACE_FLOOR_DIVIDE(self, oparg):
         """
         Implements in-place TOS = TOS1 // TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("//")
 
 
     def execute_INPLACE_TRUE_DIVIDE(self, oparg):
         """
         Implements in-place TOS = TOS1 / TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("/")
 
 
     def execute_INPLACE_MODULO(self, oparg):
         """
         Implements in-place TOS = TOS1 % TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("%")
 
 
     def execute_INPLACE_ADD(self, oparg):
         """
         Implements in-place TOS = TOS1 + TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("+")
 
 
     def execute_INPLACE_SUBTRACT(self, oparg):
         """
         Implements in-place TOS = TOS1 - TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("-")
 
 
     def execute_INPLACE_LSHIFT(self, oparg):
         """
         Implements in-place TOS = TOS1 << TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("<<")
 
 
     def execute_INPLACE_RSHIFT(self, oparg):
         """
         Implements in-place TOS = TOS1 >> TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op(">>")
 
 
     def execute_INPLACE_AND(self, oparg):
         """
         Implements in-place TOS = TOS1 & TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("&")
 
 
     def execute_INPLACE_XOR(self, oparg):
         """
         Implements in-place TOS = TOS1 ^ TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("^")
 
 
     def execute_INPLACE_OR(self, oparg):
         """
         Implements in-place TOS = TOS1 | TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.execute_binary_op("|")
 
 
     def execute_STORE_SUBSCR(self, oparg):
