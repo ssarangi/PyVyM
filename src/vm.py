@@ -163,7 +163,7 @@ class Builtins:
         print(str)
 
 class ExecutionFrame:
-    def __init__(self, callable, globals, locals, ip=0):
+    def __init__(self, callable, globals, args, ip=0):
         assert(callable is not None, "Code object has to be provided when creating a new code context")
         self.__ip = ip
         self.__callable = callable
@@ -178,12 +178,11 @@ class ExecutionFrame:
         self.__nlocals = self.__code.co_nlocals
         self.__local_vars = self.__code.co_varnames
 
-        assert(len(locals) == self.__nlocals)
         self.__locals = {}
 
-        for i in range(0, self.__nlocals):
+        for i in range(0, len(args)):
             var_name = self.__code.co_varnames[i]
-            self.__locals[var_name] = locals[i]
+            self.__locals[var_name] = args[i]
 
     @property
     def program(self):
@@ -206,6 +205,9 @@ class ExecutionFrame:
 
     def get_local_var_value(self, varname):
         return self.__locals[varname]
+
+    def set_local_var_value(self, varname, value):
+        self.__locals[varname] = value
 
     def increment_ip(self, val=1):
         self.__ip += val
@@ -263,7 +265,7 @@ class BytecodeVM:
         self.__module.code = code
         self.__current_scope = self.__module
 
-        self.__module_frame = ExecutionFrame(self.__module, globals = {}, locals = [])
+        self.__module_frame = ExecutionFrame(self.__module, globals = {}, args = [])
         self.__exec_frame = self.__module_frame
         self.__exec_frame_stack = []
         # self.__builtins = Builtins()
@@ -1001,8 +1003,9 @@ class BytecodeVM:
         """
         Stores TOS into the local co_varnames[var_num].
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
-
+        varname = self.__exec_frame.get_local_var_name(var_num)
+        value = self.__exec_frame.get_stack_top()
+        self.__exec_frame.set_local_var_value(varname, value)
 
     def execute_DELETE_FAST(self, var_num):
         """
