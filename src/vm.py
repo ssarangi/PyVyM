@@ -381,6 +381,7 @@ class BytecodeVM:
         # Get the current line being executed
         current_lineno = self.__exec_frame.line_no_obj.line_number(self.__exec_frame.ip)
 
+        ip = self.__exec_frame.ip
             # Update the line number only if the currently executing line has changed.
         if self.__exec_frame.line_no_obj.currently_executing_line is None or \
             self.__exec_frame.line_no_obj.currently_executing_line != current_lineno:
@@ -392,19 +393,23 @@ class BytecodeVM:
             print("Execution Line: %s" % current_line)
 
         op = self.__exec_frame.program[self.__exec_frame.ip]
-        self.__exec_frame.ip += 1
+        ip += 1
         opmethod = "execute_%s" % dis.opname[op]
 
         oparg = None
         if op >= dis.HAVE_ARGUMENT:
-            low = self.__exec_frame.program[self.__exec_frame.ip]
-            high = self.__exec_frame.program[self.__exec_frame.ip + 1]
+            low = self.__exec_frame.program[ip]
+            high = self.__exec_frame.program[ip + 1]
             oparg = (high << 8) | low
-            self.__exec_frame.ip += 2
 
         return opmethod, oparg, current_lineno
 
     def execute_opcode(self, opmethod, oparg):
+        # Update the IP for the opcode
+        self.__exec_frame.ip += 1
+        if oparg is not None:
+            self.__exec_frame.ip += 2
+
         if (hasattr(self, opmethod)):
             if oparg is not None:
                 terminate = getattr(self, opmethod)(oparg)

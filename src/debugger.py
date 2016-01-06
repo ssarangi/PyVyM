@@ -66,6 +66,7 @@ class Debugger:
     def initialize_vm(self, code, source, filename):
         self.__vm = BytecodeVM(code, source, filename)
         config = VMConfig()
+        config.show_disassembly = True
         self.__vm.config = config
         self.__vm.execute = self.execute
 
@@ -234,14 +235,22 @@ class Debugger:
         self.execute()
 
     def next_inst(self):
-        opmethod, oparg, current_lineno = self.__vm.get_opcode()
-        terminate = self.__vm.execute_opcode(opmethod, oparg)
+        current_lineno = self.__vm.exec_frame.line_no_obj.line_number(self.__vm.exec_frame.ip)
+        lineno = current_lineno
 
-        if terminate:
-            # Reinitialize for next execution
-            self.initialize_vm(self.__code, self.__source, self.__filename)
-            print("App exited...")
-            self.execute()
+        while lineno == current_lineno:
+            opmethod, oparg, lineno = self.__vm.get_opcode()
+            terminate = self.__vm.execute_opcode(opmethod, oparg)
+
+            if terminate:
+                # Reinitialize for next execution
+                self.initialize_vm(self.__code, self.__source, self.__filename)
+                print("App exited...")
+                self.execute()
+
+        lines = self.__vm.exec_frame.line_no_obj.get_source_sorrounding_line(lineno)
+        print(lines)
+
 
     def view_asm(self):
         if self.__breakpoint_hit is None:
