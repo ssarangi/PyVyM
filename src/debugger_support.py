@@ -73,7 +73,7 @@ class LineNo:
 
         # figure out how many lines to add
         num_lines_needed = max_lines_sorrounding - (lineno - start)
-        end = min(len(self.__source), lineno + num_lines_needed)
+        end = min(len(self.__source) - 1, lineno + num_lines_needed)
 
         source_lines = ""
         for i in range(start, end + 1):
@@ -85,3 +85,7 @@ class LineNo:
             source_lines += "%s\t%s" % (i+1, self.__source[i]) + "\n"
 
         return source_lines
+
+    def display_source(source_lines):
+        for i, line in enumerate(self.__source):
+            print("%s\t\t%s" % (i+1, line))

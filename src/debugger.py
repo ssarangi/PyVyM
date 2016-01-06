@@ -38,14 +38,15 @@ class DebuggerCmds(Enum):
     VM_DISABLE_BP = 4
     VM_CLEAR_BP = 5
     VM_CLEAR_ALL_BP = 6
-    VM_VIEW_ASM = 7
+    VM_VIEW_SOURCE = 7
     VM_VIEW_LOCALS = 8
     VM_VIEW_GLOBALS = 9
     VM_VIEW_LOCAL = 10
     VM_VIEW_GLOBAL = 11
     VM_SET_LOCAL = 12
     VM_VIEW_BACKTRACE = 14
-    HELP = 10
+    VM_VIEW_BREAKPOINTS = 15
+    HELP = 90
     QUIT = 100
 
 class Debugger:
@@ -62,12 +63,13 @@ class Debugger:
         draw_header("Initializing Debugger...")
 
         self.__breakpoint_hit = None
+        self.__vm_running = False
 
     def initialize_vm(self, code, source, filename):
         self.__vm = BytecodeVM(code, source, filename)
         config = VMConfig()
-        config.show_disassembly = True
         self.__vm.config = config
+        config.show_disassembly = True
         self.__vm.execute = self.execute
 
     def set_breakpoint(self, line_no):
@@ -131,6 +133,25 @@ class Debugger:
 
         print(backtrace)
 
+    def view_breakpoints(self):
+        draw_header("Breakpoints Set")
+        for bp, status in self.__breakpoints.items():
+            breakpoint_hit = self.__vm.exec_frame.line_no_obj.get_source_line(bp)
+            breakpoint_hit = breakpoint_hit.strip()
+            if status == True:
+                status = "Enabled"
+            else:
+                status = "Disabled"
+            print("Breakpoint Line %s: %s ---> %s" % (bp, status, breakpoint_hit))
+
+    def view_source(self, lineno):
+        if lineno > 0:
+            lines = self.__vm.exec_frame.line_no_obj.get_source_sorrounding_line(lineno)
+        else:
+            lines = self.__vm.exec_frame.line_no_obj.get_all_source_lines()
+
+        print(lines)
+
     def display_help(self):
         print("\tnext - Execute Next Instruction")
         print("\trun - Run VM")
@@ -138,12 +159,13 @@ class Debugger:
         print("\tdisable bp <loc> - Disable Breakpoint at loc")
         print("\tclear bp <loc> - Disable Breakpoint at loc")
         print("\tclear all bps - Clear all Breakpoints")
-        print("\tview asm - View Assembly")
+        print("\tview source <loc> - View Source. If no loc is specified entire source is shown")
         print("\tview locals - View the Local variables")
         print("\tview globals - View the Global variables")
         print("\tview local <var> - View local var")
         print("\tview global <var> - View global var")
         print("\tview backtrace - View the BackTrace")
+        print("\tview bp - View Breakpoints")
         print("\thelp - Display this help")
         print("\tquit - Quit")
 
@@ -170,9 +192,14 @@ class Debugger:
         elif cmd == "clear all bps":
             cmd = DebuggerCmds.VM_CLEAR_ALL_BP
             return cmd
-        elif cmd == "view asm":
-            cmd = DebuggerCmds.VM_VIEW_ASM
-            return cmd
+        elif "view source" in cmd:
+            parts = cmd.split()
+            cmd = DebuggerCmds.VM_VIEW_SOURCE
+            if len(parts) == 3:
+                lineno = int(parts[2])
+            else:
+                lineno = 0
+            return (cmd, lineno)
         elif cmd == "view locals":
             cmd = DebuggerCmds.VM_VIEW_LOCALS
             return cmd
@@ -198,6 +225,9 @@ class Debugger:
         elif cmd == "view backtrace":
             cmd = DebuggerCmds.VM_VIEW_BACKTRACE
             return cmd
+        elif cmd == "view bp":
+            cmd = DebuggerCmds.VM_VIEW_BREAKPOINTS
+            return cmd
         elif cmd == "help":
             cmd = DebuggerCmds.HELP
             return cmd
@@ -212,6 +242,7 @@ class Debugger:
 
     def run_vm(self):
         # Run until any breakpoint is hit
+        self.__vm_running = True
         while True:
             opmethod, oparg, current_lineno = self.__vm.get_opcode()
 
@@ -232,9 +263,14 @@ class Debugger:
         # Reinitialize for next execution
         self.initialize_vm(self.__code, self.__source, self.__filename)
         print("App exited...")
-        self.execute()
+        self.__vm_running = False
+        return
 
     def next_inst(self):
+        if self.__vm_running is False:
+            print("App is not running. Run it with 'run'")
+            return
+
         current_lineno = self.__vm.exec_frame.line_no_obj.line_number(self.__vm.exec_frame.ip)
         lineno = current_lineno
 
@@ -246,7 +282,8 @@ class Debugger:
                 # Reinitialize for next execution
                 self.initialize_vm(self.__code, self.__source, self.__filename)
                 print("App exited...")
-                self.execute()
+                self.__vm_running = False
+                return
 
         lines = self.__vm.exec_frame.line_no_obj.get_source_sorrounding_line(lineno)
         print(lines)
@@ -298,6 +335,10 @@ class Debugger:
                 self.view_globals(arg1)
             elif cmd is DebuggerCmds.VM_VIEW_BACKTRACE:
                 self.view_backtrace()
+            elif cmd is DebuggerCmds.VM_VIEW_BREAKPOINTS:
+                self.view_breakpoints()
+            elif cmd is DebuggerCmds.VM_VIEW_SOURCE:
+                self.view_source(arg1)
             elif cmd is DebuggerCmds.HELP:
                 self.display_help()
             elif cmd is DebuggerCmds.QUIT:
