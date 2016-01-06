@@ -24,26 +24,54 @@ THE SOFTWARE.
 
 import dis
 import sys
-import inspect
 
 from src.vm import BytecodeVM
+from src.vmconfig import VMConfig
 from src.log import draw_header
+from src.debugger import Debugger
 
-def foo(a, b=5, c=10):
-    return a + b + c
+def configure_vm():
+    config = VMConfig()
+    return config
+
+def format_source_lines(source_lines):
+    new_source_lines = []
+    for line in source_lines:
+        line = line.replace("\n", "")
+        new_source_lines.append(line)
+
+    return new_source_lines
+
+def display_source(source_lines):
+    for i, line in enumerate(source_lines):
+        print("%s\t\t%s" % (i+1, line))
 
 def main():
-    print(inspect.getcallargs(foo, 1))
     filename = sys.argv[1]
     fptr = open(filename, "r")
     source = fptr.read()
+    fptr.seek(0)
+    source_lines = format_source_lines(fptr.readlines())
+    fptr.close()
+
     draw_header("Source")
-    print(source)
+    display_source(source_lines)
     code = compile(source, filename, "exec")
-    draw_header("Disassembly")
-    dis.dis(code)
-    vm = BytecodeVM(code)
-    vm.execute()
+
+    vm = BytecodeVM(code, source_lines, filename)
+
+    WITH_DEBUGGER = True
+
+    if not WITH_DEBUGGER:
+        draw_header("Disassembly")
+        dis.dis(code)
+        #  Configure the VM and set the settings based on command line. For now use defaults
+        config = configure_vm()
+        vm.config = config
+        vm.execute()
+    else:
+        debugger = Debugger(code, source_lines, filename)
+        debugger.execute(False)
 
 if __name__ == "__main__":
     main()

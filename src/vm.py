@@ -6,6 +6,8 @@ import operator
 import sys
 from enum import Enum
 from src.log import draw_header
+from src.debugger_support import LineNo
+from src.vmconfig import VMConfig
 
 uninitialized = None
 
@@ -36,6 +38,13 @@ BINARY_OPERATORS = {
     '&':   lambda x, y: x & y,
     '|':   lambda x, y: x | y,
     '^':   lambda x, y: x ^ y,
+}
+
+UNARY_OPERATORS = {
+    '+': lambda x: abs(x),
+    "-": lambda x: -x,
+    "~": lambda x: ~x,
+    "!": lambda x: not x,
 }
 
 class Base:
@@ -96,11 +105,11 @@ class Module(Base):
 
     @property
     def code(self):
-        return Base.code
+        return Base.get_code(self)
 
     @code.setter
     def code(self, c):
-        Base.code = c
+        Base.set_code(self, c)
 
     def add_class(self, class_obj):
         self.__classes[class_obj.name] = class_obj
@@ -190,18 +199,16 @@ class Builtins:
     def __init__(self):
         self.__funcs = {}
         self.__funcs["build_class"] = Function("__build_class__")
-        self.__funcs["print"] = Function("print", self.__print__.__code__)
 
     @property
     def funcs(self):
         return self.__funcs
 
-    def __print__(self, str):
-        print(str)
-
 class ExecutionFrame:
-    def __init__(self, callable, globals, args, kwargs, ip=0):
+    def __init__(self, callable, globals, args, kwargs, source="", filename="", ip=0):
         assert(callable is not None, "Code object has to be provided when creating a new code context")
+
+        # Print the line numbers
         self.__ip = ip
         self.__callable = callable
         self.__code = callable.code
@@ -214,6 +221,8 @@ class ExecutionFrame:
         self.__program = self.__code.co_code
         self.__nlocals = self.__code.co_nlocals
         self.__local_vars = self.__code.co_varnames
+
+        self.__line_no_obj = LineNo(self.__code.co_firstlineno, self.__code.co_lnotab, source, filename)
 
         self.__locals = {}
         if isinstance(callable, Block):
@@ -237,6 +246,10 @@ class ExecutionFrame:
         # Set the keyword arguments
         for k, v in kwargs.items():
             self.__locals[k] = v
+
+    @property
+    def line_no_obj(self):
+        return self.__line_no_obj
 
     @property
     def locals(self):
@@ -324,18 +337,36 @@ class ExecutionFrame:
         return str(self.__callable)
 
 class BytecodeVM:
-    def __init__(self, code, *args):
+    def __init__(self, code, source, filename):
         self.__code_object = code
 
         self.__module = Module("main_module")
         self.__module.code = code
         self.__current_scope = self.__module
 
-        self.__module_frame = ExecutionFrame(self.__module, globals = {}, args = [], kwargs={})
+        self.__module_frame = ExecutionFrame(self.__module, globals = {}, args = [], kwargs={}, source=source, filename=filename)
         self.__exec_frame = self.__module_frame
         self.__exec_frame_stack = []
         self.__builtins = sys.modules['builtins'].__dict__
+        self.__source = source
+        self.__filename = filename
+        self.__config = None
 
+    @property
+    def exec_frame(self):
+        return self.__exec_frame
+
+    @property
+    def exec_frame_stack(self):
+        return self.__exec_frame_stack
+
+    @property
+    def config(self):
+        return self.__config
+
+    @config.setter
+    def config(self, conf):
+        self.__config = conf
 
     def print_members(self):
         co_methods = [method for method in dir(self.__code_object) if method.startswith("co_")]
@@ -345,7 +376,21 @@ class BytecodeVM:
             print("Calling method: %s" % method)
             print(m)
 
-    def __get_opcode(self):
+    def get_opcode(self):
+        # Based on the settings decide to show the line-by-line trace
+        # Get the current line being executed
+        current_lineno = self.__exec_frame.line_no_obj.line_number(self.__exec_frame.ip)
+
+            # Update the line number only if the currently executing line has changed.
+        if self.__exec_frame.line_no_obj.currently_executing_line is None or \
+            self.__exec_frame.line_no_obj.currently_executing_line != current_lineno:
+            self.__exec_frame.line_no_obj.currently_executing_line = current_lineno
+            self.__exec_frame.line_no_obj.currently_executing_line = current_lineno
+
+        if self.__config.show_line_execution:
+            current_line = self.__exec_frame.line_no_obj.get_source_line(current_lineno)
+            print("Execution Line: %s" % current_line)
+
         op = self.__exec_frame.program[self.__exec_frame.ip]
         self.__exec_frame.ip += 1
         opmethod = "execute_%s" % dis.opname[op]
@@ -357,10 +402,7 @@ class BytecodeVM:
             oparg = (high << 8) | low
             self.__exec_frame.ip += 2
 
-        return opmethod, oparg
-
-    def __jump(self, target):
-        self.__exec_frame.ip = target
+        return opmethod, oparg, current_lineno
 
     def execute_opcode(self, opmethod, oparg):
         if (hasattr(self, opmethod)):
@@ -373,21 +415,31 @@ class BytecodeVM:
 
         return terminate
 
-    def execute_next_instruction(self):
-        opmethod, oparg = self.__get_opcode()
+    def execute_next_instruction(self, config=None):
+        if config is not None:
+            self.__config = config
+
+        opmethod, oparg, current_lineno = self.get_opcode()
         terminate = self.execute_opcode(opmethod, oparg)
-        return terminate
+        return terminate, current_lineno
 
-    def execute(self):
+    def execute(self, config=None):
+        if config is not None:
+            self.__config = config
+
         while True:
-            opmethod, oparg = self.__get_opcode()
-
-            terminate = self.execute_opcode(opmethod, oparg)
+            # opmethod, oparg, current_lineno = self.get_opcode()
+            #
+            # terminate = self.execute_opcode(opmethod, oparg)
+            terminate, current_lineno = self.execute_next_instruction()
             if terminate:
                 print("Program Terminated:")
                 return_val = self.__exec_frame.pop()
                 print("Program Return Value: %s" % return_val)
                 sys.exit(return_val)
+
+    def __jump(self, target):
+        self.__exec_frame.ip = target
 
     def execute_NOP(self, oparg):
         """
@@ -407,52 +459,68 @@ class BytecodeVM:
         """
         tos = self.__exec_frame.pop()
         tos1 = self.__exec_frame.pop()
-        self.__exec_frame.append(to)
+        self.__exec_frame.append(tos1)
+        self.__exec_frame.append(tos)
 
     def execute_ROT_THREE(self, oparg):
         """
         Lifts second and third stack item one position up, moves top down to position three.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        tos = self.__exec_frame.pop()
+        tos1 = self.__exec_frame.pop()
+        tos2 = self.__exec_frame.pop()
+        self.__exec_frame.append(tos1)
+        self.__exec_frame.append(tos2)
+        self.__exec_frame.append(tos)
 
     def execute_DUP_TOP(self, oparg):
         """
         Duplicates the reference on top of the stack.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        top = self.__exec_frame.top()
+        self.__exec_frame.append(top)
 
     def execute_DUP_TOP_TWO(self, oparg):
         """
         Duplicates the two references on top of the stack, leaving them in the same order.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        tos = self.__exec_frame.pop()
+        tos1 = self.__exec_frame.top()
+        self.__exec_frame.append(tos)
+        self.__exec_frame.append(tos1)
+        self.__exec_frame.append(tos)
 
     # Unary operations
     # Unary operations take the top of the stack, apply the operation, and push the result back on the stack.
+
+    def __execute_unary(self, op):
+        lambda_op = UNARY_OPERATORS[op]
+        x = self.__exec_frame.pop()
+        self.__exec_frame.append(lambda_op(x))
 
     def execute_UNARY_POSITIVE(self, oparg):
         """
         Implements TOS = +TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.__execute_unary('+')
 
     def execute_UNARY_NEGATIVE(self, oparg):
         """
         Implements TOS = -TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.__execute_unary('-')
 
     def execute_UNARY_NOT(self, oparg):
         """
         Implements TOS = not TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.__execute_unary('!')
 
     def execute_UNARY_INVERT(self, oparg):
         """
         Implements TOS = ~TOS.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        self.__execute_unary('~')
 
     def execute_GET_ITER(self):
         """
@@ -521,7 +589,10 @@ class BytecodeVM:
         """
         Implements TOS = TOS1[TOS].
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        tos = self.__exec_frame.pop()
+        obj = self.__exec_frame.pop()
+        tos = obj[tos]
+        self.__exec_frame.append(tos)
 
 
     def execute_BINARY_LSHIFT(self):
@@ -792,8 +863,7 @@ class BytecodeVM:
         """
         Pushes builtins.__build_class__() onto the stack. It is later called by CALL_FUNCTION to construct a class.
         """
-        self.__add_to_stack(self.__builtins.__build_class__)
-
+        self.__exec_frame.append(self.__builtins.__build_class__)
 
     def execute_SETUP_WITH(self, delta):
         """
@@ -1051,7 +1121,7 @@ class BytecodeVM:
         Pushes a block for a loop onto the block stack. The block spans from the current instruction with a size of delta bytes.
         """
         block = Block(self.__exec_frame.code, self.__exec_frame.locals)
-        exec_frame = ExecutionFrame(block, self.__exec_frame.globals, [], {}, ip=self.__exec_frame.ip)
+        exec_frame = ExecutionFrame(block, self.__exec_frame.globals, [], {}, ip=self.__exec_frame.ip, source=self.__source, filename=self.__filename)
         self.__exec_frame_stack.append(self.__exec_frame)
         self.__exec_frame = exec_frame
 
@@ -1176,7 +1246,7 @@ class BytecodeVM:
             self.__exec_frame.append(result)
             return
 
-        exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args, kwargs)
+        exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args, kwargs, source=self.__source, filename=self.__filename)
         self.__exec_frame_stack.append(self.__exec_frame)
         self.__exec_frame = exec_ctx
 
@@ -1196,12 +1266,14 @@ class BytecodeVM:
         name = self.__exec_frame.pop()
         code = self.__exec_frame.pop()
         defaults = self.__exec_frame.popn(num_default_args)
-        draw_header("FUNCTION CODE: %s" % name)
-        dis.dis(code)
         fn = Function(name, defaults)
         fn.code = code
         self.__exec_frame.add_global(name, fn)
         self.__exec_frame.vm_state = VMState.BUILD_FUNC
+
+        if self.__config.show_disassembly:
+            draw_header("FUNCTION CODE: %s" % name)
+            dis.dis(code)
 
     def execute_MAKE_CLOSURE(self, argc):
         """

@@ -22,15 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-def foo(a):
-    b = a * 5
-    print("Value of b: %s" % b)
-    return b
-
-def main():
-    d = 5
-    e = 6
-    m = d + e
-    return foo(m)
-
-main()
+class VMConfig:
+    def __init__(self):
+        self.show_disassembly = False
+        self.show_line_execution = False
