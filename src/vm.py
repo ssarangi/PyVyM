@@ -164,8 +164,22 @@ class Function(Base):
 
 
 class Class(Base):
-    def __init__(self):
+    def __init__(self, name, code):
         Base.__init__(self)
+        self.__name = name
+        Base.set_code(self, code)
+
+    @property
+    def name(self):
+        return self.__name
+
+    @property
+    def code(self):
+        return Base.get_code(self)
+
+    @code.setter
+    def code(self, c):
+        Base.set_code(self, c)
 
 
 class Block(Base):
@@ -195,10 +209,31 @@ class VMState(Enum):
     EXEC = 3
 
 
+class BuildClass(Base):
+    def __init__(self, name, code):
+        Base.__init__(self)
+        self.__name = name
+        self.__code = code
+
+    @property
+    def name(self):
+        return self.__name
+
+    @property
+    def code(self):
+        return self.__code
+
+    def build(self):
+        print("Coming to Build Class")
+
 class Builtins:
     def __init__(self):
         self.__funcs = {}
-        self.__funcs["build_class"] = Function("__build_class__")
+        self.__funcs["build_class"] = self.build_class
+
+    def build_class(self, *args):
+        build_class_obj = args[0]
+        dis.dis(build_class_obj.code)
 
     @property
     def funcs(self):
@@ -351,9 +386,11 @@ class BytecodeVM:
         self.__exec_frame = self.__module_frame
         self.__exec_frame_stack = []
         self.__builtins = sys.modules['builtins'].__dict__
+        self.__custom_builtins = Builtins()
         self.__source = source
         self.__filename = filename
         self.__config = None
+        self.__BUILD_CLASS_STATE = False
 
     @property
     def exec_frame(self):
@@ -436,9 +473,6 @@ class BytecodeVM:
             self.__config = config
 
         while True:
-            # opmethod, oparg, current_lineno = self.get_opcode()
-            #
-            # terminate = self.execute_opcode(opmethod, oparg)
             terminate, current_lineno = self.execute_next_instruction()
             if terminate:
                 print("Program Terminated:")
@@ -871,7 +905,8 @@ class BytecodeVM:
         """
         Pushes builtins.__build_class__() onto the stack. It is later called by CALL_FUNCTION to construct a class.
         """
-        self.__exec_frame.append(self.__builtins.__build_class__)
+        self.__exec_frame.append(self.__custom_builtins.build_class)
+        self.__BUILD_CLASS_STATE = True
 
     def execute_SETUP_WITH(self, delta):
         """
@@ -1282,10 +1317,16 @@ class BytecodeVM:
         name = self.__exec_frame.pop()
         code = self.__exec_frame.pop()
         defaults = self.__exec_frame.popn(num_default_args)
-        fn = Function(name, defaults)
-        fn.code = code
-        self.__exec_frame.add_global(name, fn)
-        self.__exec_frame.vm_state = VMState.BUILD_FUNC
+
+        if self.__BUILD_CLASS_STATE == True:
+            build_class = BuildClass(name, code)
+            self.__exec_frame.append(build_class)
+            self.__BUILD_CLASS_STATE = False
+        else:
+            fn = Function(name, defaults)
+            fn.code = code
+            self.__exec_frame.add_global(name, fn)
+            self.__exec_frame.vm_state = VMState.BUILD_FUNC
 
         if self.__config.show_disassembly:
             draw_header("FUNCTION CODE: %s" % name)
