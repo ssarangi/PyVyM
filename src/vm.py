@@ -11,6 +11,8 @@ from src.vmconfig import VMConfig
 
 uninitialized = None
 
+class_exec_frame_attr = "ZZ__EXEC_FRAME__ZZ"
+
 COMPARE_OPERATORS = [
     operator.lt,
     operator.le,
@@ -66,20 +68,6 @@ class Base:
 
     def set_code(self, c):
         self.__code = c
-
-    def get_opcode(self):
-        op = self.__code[self.__ip]
-        self.__ip += 1
-        opmethod = "execute_%s" % dis.opname[op]
-
-        oparg = None
-        if op >= dis.HAVE_ARGUMENT:
-            low = self.__code[self.__ip]
-            high = self.__code[self.__ip + 1]
-            oparg = (high << 8) | low
-            self.__ip += 2
-
-        return opmethod, oparg
 
     def __str__(self):
         s = ""
@@ -164,23 +152,33 @@ class Function(Base):
 
 
 class Class(Base):
-    def __init__(self, name, code):
+    def __init__(self, name):
         Base.__init__(self)
         self.__name = name
-        Base.set_code(self, code)
+        self.__special_funcs = {}
+        self.__normal_funcs = {}
+
+    @property
+    def special_funcs(self):
+        return self.__special_funcs
+
+    @property
+    def normal_funcs(self):
+        return self.__normal_funcs
+
+    def add_special_func(self, fn):
+        self.__special_funcs[fn.name] = fn
+
+    def add_normal_func(self, fn):
+        self.__normal_funcs[fn.name] = fn
 
     @property
     def name(self):
         return self.__name
 
-    @property
-    def code(self):
-        return Base.get_code(self)
-
-    @code.setter
-    def code(self, c):
-        Base.set_code(self, c)
-
+class ClassImpl:
+    def __init__(self):
+        pass
 
 class Block(Base):
     def __init__(self, code, closure_vars):
@@ -209,11 +207,41 @@ class VMState(Enum):
     EXEC = 3
 
 
-class BuildClass(Base):
-    def __init__(self, name, code):
-        Base.__init__(self)
-        self.__name = name
-        self.__code = code
+def is_special_func(func_name):
+    func_start = func_name[0:2]
+    func_end = func_name[-2:]
+
+    if func_start == "__" and func_end == "__" and len(func_name) > 2:
+        return True
+
+    return False
+
+def create_class_impl(class_impl, class_def):
+    for k, v in class_def.special_funcs.items():
+        setattr(class_impl, k, v)
+
+    for k, v in class_def.normal_funcs.items():
+        setattr(class_impl, k, v)
+
+    return class_impl
+
+class BuildClass:
+    def __init__(self, name, code, config, module):
+        self.__class_name = name
+        self.__code = code.co_code
+        self.__ip = 0
+        self.__stack = []
+        self.__names = code.co_names
+        self.__constants = code.co_consts
+        self.__module = module
+        self.__klass = Class(self.__class_name)
+        self.__klass.code = code
+        self.__vm_state = VMState.EXEC
+        self.__config = config
+
+    @property
+    def klass(self):
+        return self.__klass
 
     @property
     def name(self):
@@ -223,8 +251,119 @@ class BuildClass(Base):
     def code(self):
         return self.__code
 
+    def popn(self, n):
+        if n:
+            ret = self.__stack[-n:]
+            self.__stack[-n:] = []
+            return ret
+        else:
+            return []
+
+    def get_opcode(self):
+        # Based on the settings decide to show the line-by-line trace
+        # Get the current line being executed
+
+        ip = self.__ip
+
+        op = self.__code[self.__ip]
+        ip += 1
+        opmethod = "execute_%s" % dis.opname[op]
+
+        oparg = None
+        if op >= dis.HAVE_ARGUMENT:
+            low = self.__code[ip]
+            high = self.__code[ip + 1]
+            oparg = (high << 8) | low
+
+        return opmethod, oparg
+
+    def execute_opcode(self, opmethod, oparg):
+        # Update the IP for the opcode
+        self.__ip += 1
+        if oparg is not None:
+            self.__ip += 2
+
+        if (hasattr(self, opmethod)):
+            if oparg is not None:
+                terminate = getattr(self, opmethod)(oparg)
+            else:
+                terminate = getattr(self, opmethod)()
+        else:
+            raise NotImplementedError("Method %s not found." % (opmethod))
+
+        return terminate
+
     def build(self):
-        print("Coming to Build Class")
+        terminate = False
+        while not terminate:
+            opmethod, oparg = self.get_opcode()
+            terminate = self.execute_opcode(opmethod, oparg)
+
+    def execute_LOAD_CONST(self, consti):
+        """
+        Pushes co_consts[consti] onto the stack.
+        """
+        const = self.__constants[consti]
+        self.__stack.append(const)
+
+
+    def execute_LOAD_NAME(self, namei):
+        """
+        Pushes the value associated with co_names[namei] onto the stack.
+        """
+        name = self.__names[namei]
+        self.__stack.append(name)
+
+    def execute_STORE_NAME(self, namei):
+        """
+        Implements name = TOS. namei is the index of name in the attribute co_names of the code object. The compiler tries
+        to use STORE_FAST or STORE_GLOBAL if possible.
+        """
+        # Add the name to the current scope
+        if self.__vm_state == VMState.EXEC:
+            name = self.__names[namei]
+            val = self.__stack.pop()
+            self.__klass.add_attr(name, val)
+
+    def execute_MAKE_FUNCTION(self, argc):
+        """
+        Pushes a new function object on the stack. From bottom to top, the consumed stack must consist of argc & 0xFF default argument
+        objects in positional order (argc >> 8) & 0xFF pairs of name and default argument, with the name just below the object on the
+        stack, for keyword-only parameters (argc >> 16) & 0x7FFF parameter annotation objects a tuple listing the parameter names for the
+        annotations (only if there are ony annotation objects) the code associated with the function (at TOS1) the qualified name of the
+        function (at TOS)
+        """
+        num_default_args = argc & 0xFF
+        num_kw_args = (argc >> 8) & 0xFF
+
+        name = self.__stack.pop()
+
+        name = name.replace(self.__class_name + ".", "")
+        special_func = False
+        if is_special_func(name):
+            special_func = True
+
+        code = self.__stack.pop()
+        defaults = self.popn(num_default_args)
+
+        fn = Function(name, defaults)
+        fn.code = code
+        if special_func == True:
+            self.__klass.add_special_func(fn)
+        else:
+            self.__klass.add_normal_func(fn)
+        self.__vm_state = VMState.BUILD_FUNC
+
+        if self.__config.show_disassembly:
+            draw_header("FUNCTION CODE: %s" % name)
+            dis.dis(code)
+
+    def execute_RETURN_VALUE(self):
+        """
+        Returns with TOS to the caller of the function.
+        """
+        self.__module.add_class(self.__klass)
+        return True
 
 class Builtins:
     def __init__(self):
@@ -233,7 +372,7 @@ class Builtins:
 
     def build_class(self, *args):
         build_class_obj = args[0]
-        dis.dis(build_class_obj.code)
+        build_class_obj.build()
 
     @property
     def funcs(self):
@@ -278,6 +417,16 @@ class ExecutionFrame:
             var_name = self.__code.co_varnames[i]
             self.__locals[var_name] = args[i]
 
+        # Set the keyword arguments
+        for k, v in kwargs.items():
+            self.__locals[k] = v
+
+    def set_args(self, args):
+        for i in range(0, len(args)):
+            var_name = self.__code.co_varnames[i]
+            self.__locals[var_name] = args[i]
+
+    def set_kw_args(self, kwargs):
         # Set the keyword arguments
         for k, v in kwargs.items():
             self.__locals[k] = v
@@ -943,7 +1092,7 @@ class BytecodeVM:
         to use STORE_FAST or STORE_GLOBAL if possible.
         """
         # Add the name to the current scope
-        if (self.__exec_frame.vm_state == VMState.EXEC):
+        if self.__exec_frame.vm_state == VMState.EXEC:
             value = self.__exec_frame.pop()
             name = self.__exec_frame.names[namei]
 
@@ -1161,6 +1310,19 @@ class BytecodeVM:
             global_v = self.__exec_frame.get_global(name)
 
         if global_v is None:
+            # Look in the class modules to see if it is a class
+            if name in self.__module.classes:
+                class_def = self.__module.classes[name]
+                class_impl = ClassImpl()
+                class_impl = create_class_impl(class_impl, class_def)
+                setattr(class_impl, "code", class_def.code)
+                global_v = class_impl.__init__
+                # Create a new exection context and associate it with this class
+                exec_ctx = ExecutionFrame(class_impl, self.__exec_frame.globals, [], {}, source=self.__source, filename=self.__filename)
+                exec_ctx.set_local_var_value("self", class_impl)
+                setattr(class_impl, class_exec_frame_attr, exec_ctx)
+
+        if global_v is None:
             raise Exception("Global Value %s is not defined" % name)
 
         if global_v is not None:
@@ -1297,9 +1459,14 @@ class BytecodeVM:
             self.__exec_frame.append(result)
             return
 
-        exec_ctx = ExecutionFrame(callable, self.__exec_frame.globals, args, kwargs, source=self.__source, filename=self.__filename)
+        if hasattr(callable, class_exec_frame_attr):
+            exec_frame = getattr(callable, class_exec_frame_attr)
+            exec_frame.set_args(args)
+            exec_frame.set_kwargs(kwargs)
+        else:
+            exec_frame = ExecutionFrame(callable, self.__exec_frame.globals, args, kwargs, source=self.__source, filename=self.__filename)
         self.__exec_frame_stack.append(self.__exec_frame)
-        self.__exec_frame = exec_ctx
+        self.__exec_frame = exec_frame
 
         self.execute()
 
@@ -1319,7 +1486,7 @@ class BytecodeVM:
         defaults = self.__exec_frame.popn(num_default_args)
 
         if self.__BUILD_CLASS_STATE == True:
-            build_class = BuildClass(name, code)
+            build_class = BuildClass(name, code, self.__config, self.__module)
             self.__exec_frame.append(build_class)
             self.__BUILD_CLASS_STATE = False
         else:
