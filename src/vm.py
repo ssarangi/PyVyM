@@ -1316,11 +1316,14 @@ class BytecodeVM:
                 class_impl = ClassImpl()
                 class_impl = create_class_impl(class_impl, class_def)
                 setattr(class_impl, "code", class_def.code)
+                self.__exec_frame.append(class_impl)
                 global_v = class_impl.__init__
                 # Create a new exection context and associate it with this class
                 exec_ctx = ExecutionFrame(class_impl, self.__exec_frame.globals, [], {}, source=self.__source, filename=self.__filename)
                 exec_ctx.set_local_var_value("self", class_impl)
                 setattr(class_impl, class_exec_frame_attr, exec_ctx)
+                self.__exec_frame.append(global_v)
+                return
 
         if global_v is None:
             raise Exception("Global Value %s is not defined" % name)
@@ -1459,7 +1462,8 @@ class BytecodeVM:
             self.__exec_frame.append(result)
             return
 
-        if hasattr(callable, class_exec_frame_attr):
+        if isinstance(callable, ClassImpl):
+            callable = self.__exec_frame.pop()
             exec_frame = getattr(callable, class_exec_frame_attr)
             exec_frame.set_args(args)
             exec_frame.set_kwargs(kwargs)
