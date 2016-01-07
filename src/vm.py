@@ -206,7 +206,7 @@ class Builtins:
 
 class ExecutionFrame:
     def __init__(self, callable, globals, args, kwargs, source="", filename="", ip=0):
-        assert(callable is not None, "Code object has to be provided when creating a new code context")
+        assert callable != None, "Code object has to be provided when creating a new code context"
 
         # Print the line numbers
         self.__ip = ip
@@ -246,6 +246,10 @@ class ExecutionFrame:
         # Set the keyword arguments
         for k, v in kwargs.items():
             self.__locals[k] = v
+
+    @property
+    def callable(self):
+        return self.__callable
 
     @property
     def line_no_obj(self):
@@ -342,7 +346,6 @@ class BytecodeVM:
 
         self.__module = Module("main_module")
         self.__module.code = code
-        self.__current_scope = self.__module
 
         self.__module_frame = ExecutionFrame(self.__module, globals = {}, args = [], kwargs={}, source=source, filename=filename)
         self.__exec_frame = self.__module_frame
@@ -908,7 +911,11 @@ class BytecodeVM:
         if (self.__exec_frame.vm_state == VMState.EXEC):
             value = self.__exec_frame.pop()
             name = self.__exec_frame.names[namei]
-            self.__current_scope.add_attr(name, value)
+
+            if isinstance(self.__exec_frame.callable, Module):
+                self.__exec_frame.add_global(name, value)
+            else:
+                self.__exec_frame.set_local_var_value(name, value)
 
     def execute_DELETE_NAME(self, namei):
         """
@@ -1114,8 +1121,12 @@ class BytecodeVM:
             # Check if the global is a builtin
             if name in self.__builtins:
                 global_v = self.__builtins[name]
-            else:
-                raise Exception("Global Value %s is not defined" % name)
+
+        if global_v is None:
+            global_v = self.__exec_frame.get_global(name)
+
+        if global_v is None:
+            raise Exception("Global Value %s is not defined" % name)
 
         if global_v is not None:
             self.__exec_frame.append(global_v)

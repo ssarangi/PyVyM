@@ -60,13 +60,14 @@ def main():
 
     vm = BytecodeVM(code, source_lines, filename)
 
-    WITH_DEBUGGER = True
+    WITH_DEBUGGER = False
 
     if not WITH_DEBUGGER:
         draw_header("Disassembly")
         dis.dis(code)
         #  Configure the VM and set the settings based on command line. For now use defaults
         config = configure_vm()
+        config.show_disassembly = True
         vm.config = config
         vm.execute()
     else:
