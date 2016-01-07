@@ -27,7 +27,8 @@ class Foo:
         self.member1 = 1
 
     def print(self):
-        print(self.member1)
+        self.member1 += 5
+        print("Member1: %s" % self.member1)
 
 def main():
     foo = Foo()

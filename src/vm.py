@@ -49,6 +49,10 @@ UNARY_OPERATORS = {
     "!": lambda x: not x,
 }
 
+class TerminateStates(Enum):
+    TERMINATE_PROGRAM = 1
+    TERMINATE_FUNCTION = 2
+
 class Base:
     def __init__(self):
         self.__code = None
@@ -402,6 +406,9 @@ class ExecutionFrame:
         if isinstance(callable, Block):
             self.__locals = callable.closure_vars
 
+        self.__source = source
+        self.__filename = filename
+
         # Set the default arguments. This could be optimized so we set it once in the function
         # itself. But then we don't pull from Function locals right now
         if hasattr(callable, "defaults"):
@@ -434,6 +441,19 @@ class ExecutionFrame:
     @property
     def callable(self):
         return self.__callable
+
+    @callable.setter
+    def callable(self, callable_obj):
+        self.__callable = callable_obj
+        self.__code = callable_obj.code
+
+        self.__constants = self.__code.co_consts
+        self.__names = self.__code.co_names
+        self.__program = self.__code.co_code
+        self.__nlocals = self.__code.co_nlocals
+        self.__local_vars = self.__code.co_varnames
+
+        self.__line_no_obj = LineNo(self.__code.co_firstlineno, self.__code.co_lnotab, self.__source, self.__filename)
 
     @property
     def line_no_obj(self):
@@ -623,20 +643,24 @@ class BytecodeVM:
 
         while True:
             terminate, current_lineno = self.execute_next_instruction()
-            if terminate:
+            if terminate == TerminateStates.TERMINATE_PROGRAM:
                 print("Program Terminated:")
                 return_val = self.__exec_frame.pop()
                 print("Program Return Value: %s" % return_val)
                 sys.exit(return_val)
+            elif terminate == TerminateStates.TERMINATE_FUNCTION:
+                return
+            else:
+                pass
 
     def __jump(self, target):
         self.__exec_frame.ip = target
 
-    def execute_NOP(self, oparg):
+    def execute_NOP(self):
         """
         Do nothing code. Used as a placeholder by the bytecode optimizer.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        pass
 
     def execute_POP_TOP(self):
         """
@@ -644,16 +668,16 @@ class BytecodeVM:
         """
         self.__exec_frame.pop()
 
-    def execute_ROT_TWO(self, oparg):
+    def execute_ROT_TWO(self):
         """
         Swaps the two top-most stack items.
         """
         tos = self.__exec_frame.pop()
         tos1 = self.__exec_frame.pop()
-        self.__exec_frame.append(tos1)
         self.__exec_frame.append(tos)
+        self.__exec_frame.append(tos1)
 
-    def execute_ROT_THREE(self, oparg):
+    def execute_ROT_THREE(self):
         """
         Lifts second and third stack item one position up, moves top down to position three.
         """
@@ -664,14 +688,14 @@ class BytecodeVM:
         self.__exec_frame.append(tos2)
         self.__exec_frame.append(tos)
 
-    def execute_DUP_TOP(self, oparg):
+    def execute_DUP_TOP(self):
         """
         Duplicates the reference on top of the stack.
         """
         top = self.__exec_frame.top()
         self.__exec_frame.append(top)
 
-    def execute_DUP_TOP_TWO(self, oparg):
+    def execute_DUP_TOP_TWO(self):
         """
         Duplicates the two references on top of the stack, leaving them in the same order.
         """
@@ -995,7 +1019,9 @@ class BytecodeVM:
         self.__exec_frame.append(return_val)
 
         if prev_exec_ctx == None:
-            terminate = True
+            terminate = TerminateStates.TERMINATE_PROGRAM
+        else:
+            terminate = TerminateStates.TERMINATE_FUNCTION
 
         return terminate
 
@@ -1129,7 +1155,11 @@ class BytecodeVM:
         """
         Implements TOS.name = TOS1, where namei is the index of name in co_names.
         """
-        raise NotImplementedError("Method %s not implemented" % sys._getframe().f_code.co_name)
+        obj = self.__exec_frame.pop()
+        val = self.__exec_frame.pop()
+        name = self.__exec_frame.names[namei]
+        setattr(obj, name, val)
+
 
 
     def execute_DELETE_ATTR(self, namei):
@@ -1202,8 +1232,14 @@ class BytecodeVM:
         """
         Replaces TOS with getattr(TOS, co_names[namei]).
         """
-        func = getattr(self.__exec_frame.pop(), self.__exec_frame.names[namei])
-        self.__exec_frame.append(func)
+        obj = self.__exec_frame.pop()
+        name = self.__exec_frame.names[namei]
+        attr = getattr(obj, name)
+        self.__exec_frame.append(attr)
+
+        # Function calls for Classes would need a reference to the class obj
+        if isinstance(attr, Function):
+            self.__exec_frame.append(obj)
 
 
     def execute_COMPARE_OP(self, compare_op):
@@ -1453,26 +1489,45 @@ class BytecodeVM:
         args.reverse()
 
         callable = self.__exec_frame.pop()
-        self.__exec_frame.append(callable)
 
         if not isinstance(callable, Function) and not isinstance(callable, ClassImpl):
             # This is a builtin function. Then directly run it
+            self.__exec_frame.append(callable)
             result = callable(*args)
             self.__exec_frame.pop()
             self.__exec_frame.append(result)
             return
 
+        BUILD_CLASS = False
         if isinstance(callable, ClassImpl):
+            # if the callable is the constructor of the class, then add the constructor to the top
+            class_obj = callable
             callable = self.__exec_frame.pop()
-            exec_frame = getattr(callable, class_exec_frame_attr)
+
+            func_name = callable.name
+            if func_name == "__init__":
+                BUILD_CLASS = True
+
+            exec_frame = getattr(class_obj, class_exec_frame_attr)
             exec_frame.set_args(args)
             exec_frame.set_kwargs(kwargs)
+            exec_frame.callable = callable
+
+            # Reset the IP
+            exec_frame.ip = 0
         else:
             exec_frame = ExecutionFrame(callable, self.__exec_frame.globals, args, kwargs, source=self.__source, filename=self.__filename)
         self.__exec_frame_stack.append(self.__exec_frame)
         self.__exec_frame = exec_frame
 
         self.execute()
+
+        if BUILD_CLASS == True:
+            # Init Function must have been called.
+            # Init functions cannot return anything. They will return just NONE. However, the class object needs to be
+            # assigned to the caller. So we will pop the stack for the NONE value and push the class object into the stack.
+            self.__exec_frame.pop()
+            self.__exec_frame.append(class_obj)
 
     def execute_MAKE_FUNCTION(self, argc):
         """
