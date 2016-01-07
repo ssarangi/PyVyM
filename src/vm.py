@@ -426,7 +426,7 @@ class ExecutionFrame:
             var_name = self.__code.co_varnames[i]
             self.__locals[var_name] = args[i]
 
-    def set_kw_args(self, kwargs):
+    def set_kwargs(self, kwargs):
         # Set the keyword arguments
         for k, v in kwargs.items():
             self.__locals[k] = v
@@ -1316,13 +1316,13 @@ class BytecodeVM:
                 class_impl = ClassImpl()
                 class_impl = create_class_impl(class_impl, class_def)
                 setattr(class_impl, "code", class_def.code)
-                self.__exec_frame.append(class_impl)
                 global_v = class_impl.__init__
                 # Create a new exection context and associate it with this class
                 exec_ctx = ExecutionFrame(class_impl, self.__exec_frame.globals, [], {}, source=self.__source, filename=self.__filename)
                 exec_ctx.set_local_var_value("self", class_impl)
                 setattr(class_impl, class_exec_frame_attr, exec_ctx)
                 self.__exec_frame.append(global_v)
+                self.__exec_frame.append(class_impl)
                 return
 
         if global_v is None:
@@ -1455,7 +1455,7 @@ class BytecodeVM:
         callable = self.__exec_frame.pop()
         self.__exec_frame.append(callable)
 
-        if not isinstance(callable, Function):
+        if not isinstance(callable, Function) and not isinstance(callable, ClassImpl):
             # This is a builtin function. Then directly run it
             result = callable(*args)
             self.__exec_frame.pop()
