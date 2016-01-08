@@ -185,14 +185,9 @@ class ClassImpl:
         pass
 
 class Block(Base):
-    def __init__(self, code, closure_vars):
+    def __init__(self, code):
         Base.__init__(self)
         Base.set_code(self, code)
-        self.__closure_vars = closure_vars
-
-    @property
-    def closure_vars(self):
-        return self.__closure_vars
 
     @property
     def code(self):
@@ -383,7 +378,7 @@ class Builtins:
         return self.__funcs
 
 class ExecutionFrame:
-    def __init__(self, callable, globals, args, kwargs, source="", filename="", ip=0):
+    def __init__(self, callable, globals, args, kwargs, parent_exec_frame = None, source="", filename="", ip=0):
         assert callable != None, "Code object has to be provided when creating a new code context"
 
         # Print the line numbers
@@ -405,6 +400,8 @@ class ExecutionFrame:
         self.__locals = {}
         if isinstance(callable, Block):
             self.__locals = callable.closure_vars
+
+        self.__parent_exec_frame = parent_exec_frame
 
         self.__source = source
         self.__filename = filename
@@ -437,6 +434,10 @@ class ExecutionFrame:
         # Set the keyword arguments
         for k, v in kwargs.items():
             self.__locals[k] = v
+
+    @property
+    def parent_exec_frame(self):
+        return self.__parent_exec_frame
 
     @property
     def callable(self):
@@ -483,10 +484,30 @@ class ExecutionFrame:
         return self.__local_vars[varnum]
 
     def get_local_var_value(self, varname):
-        return self.__locals[varname]
+        locals = self.__locals
+        current_exec_frame = self
+
+        found = False
+        while not found or locals is None:
+            if varname in locals:
+                return locals[varname]
+            else:
+                locals = current_exec_frame.parent_exec_frame
+
+        raise Exception("Local variable: %s not found in scope" % varname)
 
     def set_local_var_value(self, varname, value):
-        self.__locals[varname] = value
+        locals = self.__locals
+        current_exec_frame = self
+
+        found = False
+        while not found or locals is None:
+            if varname in locals:
+                locals[varname] = value
+            else:
+                locals = current_exec_frame.parent_exec_frame
+
+        raise Exception("Local variable: %s not found in scope" % varname)
 
     def increment_ip(self, val=1):
         self.__ip += val
@@ -1372,8 +1393,8 @@ class BytecodeVM:
         """
         Pushes a block for a loop onto the block stack. The block spans from the current instruction with a size of delta bytes.
         """
-        block = Block(self.__exec_frame.code, self.__exec_frame.locals)
-        exec_frame = ExecutionFrame(block, self.__exec_frame.globals, [], {}, ip=self.__exec_frame.ip, source=self.__source, filename=self.__filename)
+        block = Block(self.__exec_frame.code)
+        exec_frame = ExecutionFrame(block, self.__exec_frame.globals, [], {}, parent_exec_frame=self.__exec_frame, ip=self.__exec_frame.ip, source=self.__source, filename=self.__filename)
         self.__exec_frame_stack.append(self.__exec_frame)
         self.__exec_frame = exec_frame
 
