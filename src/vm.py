@@ -398,8 +398,6 @@ class ExecutionFrame:
         self.__line_no_obj = LineNo(self.__code.co_firstlineno, self.__code.co_lnotab, source, filename)
 
         self.__locals = {}
-        if isinstance(callable, Block):
-            self.__locals = callable.closure_vars
 
         self.__parent_exec_frame = parent_exec_frame
 
@@ -484,30 +482,24 @@ class ExecutionFrame:
         return self.__local_vars[varnum]
 
     def get_local_var_value(self, varname):
-        locals = self.__locals
         current_exec_frame = self
 
         found = False
-        while not found or locals is None:
+        while not found or current_exec_frame is not None:
+            locals = current_exec_frame.locals
             if varname in locals:
-                return locals[varname]
+                return locals[varname], current_exec_frame
             else:
-                locals = current_exec_frame.parent_exec_frame
+                current_exec_frame = current_exec_frame.parent_exec_frame
 
         raise Exception("Local variable: %s not found in scope" % varname)
 
     def set_local_var_value(self, varname, value):
-        locals = self.__locals
-        current_exec_frame = self
-
-        found = False
-        while not found or locals is None:
-            if varname in locals:
-                locals[varname] = value
-            else:
-                locals = current_exec_frame.parent_exec_frame
-
-        raise Exception("Local variable: %s not found in scope" % varname)
+        try:
+            local_value, exec_frame = self.get_local_var_value(varname)
+            exec_frame.locals[varname] = value
+        except:
+            self.__locals[varname] = value
 
     def increment_ip(self, val=1):
         self.__ip += val
@@ -1425,7 +1417,8 @@ class BytecodeVM:
         Pushes a reference to the local co_varnames[var_num] onto the stack.
         """
         varname = self.__exec_frame.get_local_var_name(var_num)
-        self.__exec_frame.append(self.__exec_frame.get_local_var_value(varname))
+        local_var, exec_frame = self.__exec_frame.get_local_var_value(varname)
+        self.__exec_frame.append(local_var)
 
 
     def execute_STORE_FAST(self, var_num):
