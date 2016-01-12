@@ -91,12 +91,16 @@ class Debugger:
         self.__breakpoints = {}
 
     def view_locals(self, local_var=None):
-        locals = self.__vm.exec_frame.locals
-
         draw_header("Locals")
-        for k, v in locals.items():
-            if local_var is None or local_var == k:
-                print("%s: %s" % (k, v))
+        current_exec_frame = self.__vm.exec_frame
+
+        while current_exec_frame is not None:
+            locals = current_exec_frame.locals
+            for k, v in locals.items():
+                if local_var is None or local_var == k:
+                    print("%s: %s" % (k, v))
+
+            current_exec_frame = current_exec_frame.parent_exec_frame
 
     def view_globals(self, global_var=None):
         globals = self.__vm.exec_frame.globals
