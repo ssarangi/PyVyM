@@ -110,19 +110,17 @@ class Debugger:
             if global_var is None or global_var == k:
                 print("%s: %s" % (k, v))
 
-    def set_local(self, local_var, val):
-        locals = self.__vm.exec_frame.locals
+    def set_local(self, local_var, val_to_set):
+        val, exec_frame = self.__vm.exec_frame.get_local_var_value(local_var)
+        t = type(val)
+        try:
+            exec_frame.set_local_var_value(local_var, t(val_to_set))
+        except:
+            exec_frame.set_local_var_value(local_var, val_to_set)
 
         draw_header("Locals Changed")
-        for k, v in locals.items():
-            if k == local_var:
-                t = type(v)
-                try:
-                    new_val = t(val)
-                    self.__vm.exec_frame.locals[k] = new_val
-                except:
-                    self.__vm.exec_frame.locals[k] = val
-                print("%s: %s" % (k, self.__vm.exec_frame.locals[k]))
+        val, exec_frame = self.__vm.exec_frame.get_local_var_value(local_var)
+        print("%s: %s" % (local_var, val))
 
     def view_backtrace(self):
         stack_trace = [frame for frame in self.__vm.exec_frame_stack]
