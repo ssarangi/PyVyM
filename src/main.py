@@ -60,7 +60,7 @@ def main():
 
     vm = BytecodeVM(code, source_lines, filename)
 
-    WITH_DEBUGGER = True
+    WITH_DEBUGGER = False
 
     if not WITH_DEBUGGER:
         draw_header("Disassembly")

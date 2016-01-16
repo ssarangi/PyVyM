@@ -754,7 +754,6 @@ class BytecodeVM:
         """
         Implements TOS = iter(TOS).
         """
-        print(self.__exec_frame.top())
         self.__exec_frame.append(iter(self.__exec_frame.pop()))
 
     # Binary operations
